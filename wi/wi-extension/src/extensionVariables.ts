@@ -41,7 +41,7 @@ export class ExtensionVariables {
 	public cloudEnv: string = "prod";
 
 	/** True when running inside the Devant cloud editor (CLOUD_STS_TOKEN is set). */
-	public isDevantCloudEditor: boolean = !!process.env.CLOUD_STS_TOKEN;
+	public isDevantCloudEditor: boolean = !!process.env.CLOUD_STS_TOKEN; //
 
 	/** Extension config with console URLs and GitHub app config — populated during activation. */
 	public config?: GetCliRpcResp;

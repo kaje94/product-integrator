@@ -315,6 +315,8 @@
   "dependencies": {
     "@wso2/wi-core": "workspace:*",
     "@wso2/wso2-platform-core": "workspace:*",
+    "ai": "6.0.103",
+    "zod": "4.1.8",
     "vscode-messenger-common": "^0.5.1",
     "vscode-messenger": "~0.5.1",
     "vscode-jsonrpc": "8.2.1",

@@ -21,10 +21,16 @@ import { activateCloudFunctionality } from "./cloud/activate";
 import { ext } from "./extensionVariables";
 import { StateMachine } from "./stateMachine";
 import { WICloudExtensionAPI } from "./cloud/cloud-ext-api";
-import { IWso2PlatformExtensionAPI } from "@wso2/wso2-platform-core";
+import { IWso2PlatformExtensionAPI, DevantToolEventHandler } from "@wso2/wso2-platform-core";
+import { createDevantToolRegistry, DevantToolRegistry } from "./ai/devant-tool-registry";
+import { getDevantKnowledge } from "./ai/devant-prompts";
 
 interface ExtensionExports {
 	cloudAPIs: IWso2PlatformExtensionAPI;
+	ai: {
+		createDevantToolRegistry: (handler: DevantToolEventHandler) => DevantToolRegistry;
+		getDevantKnowledge: () => string;
+	};
 }
 
 /**
@@ -45,7 +51,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
 		// Boot cloud/RPC/auth functionality
 		await activateCloudFunctionality(context);
-		const exports: ExtensionExports = { cloudAPIs: new WICloudExtensionAPI() };
+		const exports: ExtensionExports = {
+			cloudAPIs: new WICloudExtensionAPI(),
+			ai: { createDevantToolRegistry, getDevantKnowledge },
+		};
 		ext.log("WSO2 Integrator Extension activated successfully");
 		return exports;
 	} catch (error) {

@@ -24,12 +24,14 @@ import type {
 	IWso2PlatformExtensionAPI,
 } from "@wso2/wso2-platform-core";
 import { ext } from "../extensionVariables";
-import { hasDirtyRepo } from "./git/util";
+import { hasDirtyRepo, getGitRoot } from "./git/util";
 import { openClonedDir } from "./cloud-uri-handlers";
 import { contextStore } from "./stores/context-store";
 import { webviewStateStore } from "./stores/webview-state-store";
 import { createConnectionConfig, deleteLocalConnectionConfig } from "./cloud-utils";
 import { isSamePath } from "../utils/pathUtils";
+import { dataCacheStore } from "./stores/data-cache-store";
+import { updateContextFile as updateContextFileUtil } from "./cmds/create-directory-context-cmd";
 
 /**
  * Implements IWso2PlatformExtensionAPI using wi-extension's own stores and RPC client.
@@ -113,6 +115,24 @@ export class WICloudExtensionAPI implements IWso2PlatformExtensionAPI {
 		ext.clients.rpcClient.getEnvs(params);
 	public getComponentList = (params: Parameters<IWso2PlatformExtensionAPI["getComponentList"]>[0]) =>
 		ext.clients.rpcClient.getComponentList(params);
+	public getProjects = (orgId: string) =>
+		ext.clients.rpcClient.getProjects(orgId);
+	public createProject = (params: Parameters<IWso2PlatformExtensionAPI["createProject"]>[0]) =>
+		ext.clients.rpcClient.createProject(params);
+	public updateContextFile = async (params: Parameters<IWso2PlatformExtensionAPI["updateContextFile"]>[0]): Promise<void> => {
+		const userInfo = ext.authProvider?.getState().state.userInfo;
+		const org = userInfo?.organizations?.find((o) => o.handle === params.orgHandle);
+		if (!userInfo || !org) {
+			throw new Error("User not authenticated or organization not found");
+		}
+		const projectList = dataCacheStore.getState().getProjects(params.orgHandle);
+		const gitRoot = await getGitRoot(ext.context, params.workspacePath);
+		if (!gitRoot) {
+			throw new Error("No git repository found at the given workspace path");
+		}
+		updateContextFileUtil(gitRoot, userInfo, params.selectedProject, org, projectList);
+	};
+	public refreshState = () => contextStore.getState().refreshState();
 
 	// Proxy
 	public startProxyServer = (params: Parameters<IWso2PlatformExtensionAPI["startProxyServer"]>[0]) =>
