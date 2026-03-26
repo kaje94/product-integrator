@@ -17,14 +17,16 @@
  */
 
 import { WebviewPanel } from "vscode";
-import { createExtensionTransportManager, createRequestRouter } from "vscode-webview-network-bridge";
+import { createExtensionTransportManager, createRequestRouter } from "webview-giga-bridge";
 import {
     BIProjectRequest,
     CreateMiProjectRequest,
+    CreateSiProjectRequest,
     DownloadProgress,
     FetchSamplesRequest,
     FileOrDirRequest,
     GetConfigurationRequest,
+    SetConfigurationRequest,
     GetSubFoldersRequest,
     ImportIntegrationWsRequest,
     MigrateRequest,
@@ -49,6 +51,7 @@ import {
     WIWsResponseMessage,
     WebviewContext,
     WITransportBootstrap,
+    CloneProgressStage,
 } from "@wso2/wi-core";
 import type {
     AuthState,
@@ -62,6 +65,7 @@ import type {
     GetGitMetadataReq,
     IsRepoAuthorizedReq,
     WICloudSubmitComponentsReq,
+    GetCloudProjectsReq,
 } from "@wso2/wi-core";
 import { MainWsManager } from "./ws-managers/main/ws-manager";
 import { CloudWsManager } from "./ws-managers/cloud/ws-manager";
@@ -89,7 +93,9 @@ export class BridgeLayer {
 
     static startWebSocketServer(projectUri: string): WITransportBootstrap {
         const channel = this.getOrCreateChannel(projectUri);
-        if (!channel.transport.isWebSocketServerRunning()) {
+        if (channel.transport.getMode() !== "websocket") {
+            channel.transport.switchMode("websocket");
+        } else if (!channel.transport.isWebSocketServerRunning()) {
             channel.transport.startWebSocketServer();
         }
         return channel.transport.getWebviewBootstrap();
@@ -138,7 +144,20 @@ export class BridgeLayer {
         });
     }
 
+    static notifyCloneProgress(stage: CloneProgressStage, projectUri: string = "global"): void {
+        this.publish(projectUri, {
+            type: WI_BRIDGE_EVENTS.CLONE_PROGRESS,
+            stage,
+        });
+    }
+
     // ── Cloud event publishers ────────────────────────────────
+    static notifySignInInitiated(projectUri: string = "global"): void {
+        this.publish(projectUri, {
+            type: WI_BRIDGE_EVENTS.SIGN_IN_INITIATED,
+        });
+    }
+
     static notifyAuthStateChanged(projectUri: string, state: AuthState): void {
         this.publish(projectUri, {
             type: WI_BRIDGE_EVENTS.AUTH_STATE_CHANGED,
@@ -213,6 +232,7 @@ export class BridgeLayer {
         }
 
         registerRoute("getWebviewContext", async () => wsManager.getWebviewContext());
+        registerRoute("getRecentProjects", async () => wsManager.getRecentProjects());
         registerRoute("closeWebview", async () => wsManager.closeWebview());
         registerRoute("openBiExtension", async () => wsManager.openBiExtension());
         registerRoute("openMiExtension", async () => wsManager.openMiExtension());
@@ -226,6 +246,9 @@ export class BridgeLayer {
         registerRoute("getConfiguration", async (request) =>
             wsManager.getConfiguration(request.params as GetConfigurationRequest)
         );
+        registerRoute("setConfiguration", async (request) =>
+            wsManager.setConfiguration(request.params as SetConfigurationRequest)
+        );
         registerRoute("getSupportedMIVersionsHigherThan", async (request) =>
             wsManager.getSupportedMIVersionsHigherThan(request.params)
         );
@@ -235,6 +258,9 @@ export class BridgeLayer {
         registerRoute("askProjectDirPath", async () => wsManager.askProjectDirPath());
         registerRoute("createMiProject", async (request) =>
             wsManager.createMiProject(request.params as CreateMiProjectRequest)
+        );
+        registerRoute("createSiProject", async (request) =>
+            wsManager.createSiProject(request.params as CreateSiProjectRequest)
         );
         registerRoute("fetchSamplesFromGithub", async (request) =>
             wsManager.fetchSamplesFromGithub(request.params as FetchSamplesRequest)
@@ -276,6 +302,8 @@ export class BridgeLayer {
         );
         registerRoute("restoreWebviewCache", async (request) => wsManager.restoreWebviewCache(request.params));
         registerRoute("clearWebviewCache", async (request) => wsManager.clearWebviewCache(request.params));
+        registerRoute("getDefaultOrgName", async () => cloudManager.getDefaultOrgName());
+        registerRoute("getDefaultCreationPath", async () => wsManager.getDefaultCreationPath());
 
         // ── Cloud routes ──────────────────────────────────────────
         registerRoute("getCloudFormContext", async () => cloudManager.getCloudFormContext());
@@ -285,6 +313,7 @@ export class BridgeLayer {
         registerRoute("closeCloudFormWebview", async () => cloudManager.closeCloudFormWebview());
         registerRoute("getAuthState", async () => cloudManager.getAuthState());
         registerRoute("getContextState", async () => cloudManager.getContextState());
+        registerRoute("changeOrgContext", async (request) => cloudManager.changeOrgContext(request.params));
         registerRoute("getLocalGitData", async (request) => cloudManager.getLocalGitData(request.params));
         registerRoute("hasDirtyRepo", async (request) => cloudManager.hasDirtyRepo(request.params));
         registerRoute("getConfigFileDrifts", async (request) =>
@@ -314,6 +343,9 @@ export class BridgeLayer {
             cloudManager.cloneRepositoryIntoCompDir(request.params as CloneRepositoryIntoCompDirReq)
         );
         registerRoute("getConsoleUrl", async () => cloudManager.getConsoleUrl());
+        registerRoute("getCloudProjects", async (request) =>
+            cloudManager.getCloudProjects(request.params as GetCloudProjectsReq)
+        );
 
         return router;
     }
@@ -356,8 +388,12 @@ export class BridgeLayer {
     }
 
     private static resolveWebSocketPort(): number {
-        const fallbackPort = 8787;
         const configuredPort = Number(process.env.WEB_VIEW_BRIDGE_PORT);
-        return Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : fallbackPort;
+        if (Number.isInteger(configuredPort) && configuredPort >= 0) {
+            return configuredPort;
+        }
+
+        // Let the OS allocate an available port when one is not explicitly configured.
+        return 0;
     }
 }

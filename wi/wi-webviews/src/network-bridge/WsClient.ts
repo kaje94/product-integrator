@@ -22,12 +22,16 @@ import {
     BIProjectRequest,
     CreateMiProjectRequest,
     CreateMiProjectResponse,
+    CreateSiProjectRequest,
+    CreateSiProjectResponse,
     DownloadProgress,
     FetchSamplesRequest,
     FileOrDirRequest,
     FileOrDirResponse,
     GetConfigurationRequest,
     GetConfigurationResponse,
+    GetRecentProjectsResponse,
+    SetConfigurationRequest,
     GetMigrationToolsResponse,
     GetSubFoldersRequest,
     GetSubFoldersResponse,
@@ -59,12 +63,14 @@ import {
     WIWsMethodResultMap,
     WITransportBootstrap,
     WorkspaceRootResponse,
+    CloneProgressStage,
 } from "@wso2/wi-core";
 import type {
     AuthState,
     CloneRepositoryIntoCompDirReq,
     ContextStoreState,
     CredentialItem,
+    DefaultOrgNameResponse,
     GetAuthorizedGitOrgsReq,
     GetAuthorizedGitOrgsResp,
     GetBranchesReq,
@@ -79,8 +85,10 @@ import type {
     WICloudFormContext,
     WICloudSubmitComponentsReq,
     WICloudSubmitComponentsResp,
+    GetCloudProjectsReq,
+    GetCloudProjectsResp,
 } from "@wso2/wi-core";
-import { ConnectionStatus, createWebviewTransportAdapter } from "vscode-webview-network-bridge/webview";
+import { ConnectionStatus, createWebviewTransportAdapter } from "webview-giga-bridge/webview";
 
 declare global {
     interface Window {
@@ -101,12 +109,19 @@ export function resolveBridgeBootstrap(): WITransportBootstrap {
     const queryMode = parseBridgeMode(urlParams.get("bridgeMode"));
     const queryWsServer = urlParams.get("wsServer") ?? undefined;
     const queryWsPort = Number(urlParams.get("wsPort"));
+    const runtimeWsPort = runtimeBootstrap?.wsPort;
     const hasVsCodeApi = typeof (globalThis as { acquireVsCodeApi?: unknown }).acquireVsCodeApi === "function";
+    const explicitMode = runtimeBootstrap?.mode ?? queryMode;
+    const resolvedWsPort = Number.isFinite(queryWsPort) && queryWsPort > 0
+        ? queryWsPort
+        : Number.isFinite(runtimeWsPort) && runtimeWsPort > 0
+            ? runtimeWsPort
+            : 8787;
 
     return {
-        mode: hasVsCodeApi ? runtimeBootstrap?.mode ?? "proxy" : queryMode ?? "websocket",
+        mode: explicitMode ?? (hasVsCodeApi ? "proxy" : "websocket"),
         wsServer: queryWsServer ?? runtimeBootstrap?.wsServer ?? "127.0.0.1",
-        wsPort: Number.isFinite(queryWsPort) && queryWsPort > 0 ? queryWsPort : runtimeBootstrap?.wsPort ?? 8787,
+        wsPort: resolvedWsPort,
     };
 }
 
@@ -123,8 +138,10 @@ export class WsClient {
     private readonly migrationToolLogListeners = new Set<(log: string) => void>();
     private readonly migratedProjectListeners = new Set<(result: ProjectMigrationResult) => void>();
     // ── Cloud event listeners ─────────────────────────────────
+    private readonly signInInitiatedListeners = new Set<() => void>();
     private readonly authStateChangedListeners = new Set<(state: AuthState) => void>();
     private readonly contextStateChangedListeners = new Set<(state: ContextStoreState) => void>();
+    private readonly cloneProgressListeners = new Set<(stage: CloneProgressStage) => void>();
 
     constructor() {
         this.transport.subscribe(
@@ -135,6 +152,10 @@ export class WsClient {
 
     public getWebviewContext(): Promise<WebviewContext> {
         return this.request("getWebviewContext");
+    }
+
+    public getRecentProjects(): Promise<GetRecentProjectsResponse> {
+        return this.request("getRecentProjects");
     }
 
     public closeWebview(): void {
@@ -173,6 +194,10 @@ export class WsClient {
         return this.request("getConfiguration", params);
     }
 
+    public setConfiguration(params: SetConfigurationRequest): Promise<void> {
+        return this.request("setConfiguration", params);
+    }
+
     public getSupportedMIVersionsHigherThan(version: string): Promise<GetSupportedMIVersionsResponse> {
         return this.request("getSupportedMIVersionsHigherThan", version);
     }
@@ -187,6 +212,10 @@ export class WsClient {
 
     public createMiProject(params: CreateMiProjectRequest): Promise<CreateMiProjectResponse> {
         return this.request("createMiProject", params);
+    }
+
+    public createSiProject(params: CreateSiProjectRequest): Promise<CreateSiProjectResponse> {
+        return this.request("createSiProject", params);
     }
 
     public fetchSamplesFromGithub(params: FetchSamplesRequest): Promise<GettingStartedData> {
@@ -281,6 +310,14 @@ export class WsClient {
         this.migratedProjectListeners.add(callback);
     }
 
+    public getDefaultOrgName(): Promise<DefaultOrgNameResponse> {
+        return this.request("getDefaultOrgName");
+    }
+
+    public getDefaultCreationPath(): Promise<WorkspaceRootResponse> {
+        return this.request("getDefaultCreationPath");
+    }
+
     // ── Cloud methods ─────────────────────────────────────────
 
     public getCloudFormContext(): Promise<WICloudFormContext> {
@@ -301,6 +338,10 @@ export class WsClient {
 
     public getContextState(): Promise<ContextStoreState> {
         return this.request("getContextState");
+    }
+
+    public changeOrgContext(orgId: string): Promise<void> {
+        return this.request("changeOrgContext", orgId);
     }
 
     public getLocalGitData(dirPath: string): Promise<GetLocalGitDataResp | undefined> {
@@ -355,12 +396,26 @@ export class WsClient {
         return this.request("getConsoleUrl");
     }
 
+    public getCloudProjects(params: GetCloudProjectsReq): Promise<GetCloudProjectsResp> {
+        return this.request("getCloudProjects", params);
+    }
+
+    public onSignInInitiated(callback: () => void): () => void {
+        this.signInInitiatedListeners.add(callback);
+        return () => this.signInInitiatedListeners.delete(callback);
+    }
+
     public onAuthStateChanged(callback: (state: AuthState) => void) {
         this.authStateChangedListeners.add(callback);
     }
 
     public onContextStateChanged(callback: (state: ContextStoreState) => void) {
         this.contextStateChangedListeners.add(callback);
+    }
+
+    public onCloneProgress(callback: (stage: CloneProgressStage) => void): () => void {
+        this.cloneProgressListeners.add(callback);
+        return () => this.cloneProgressListeners.delete(callback);
     }
 
     public async request<TAction extends WIWsMethod>(
@@ -422,11 +477,17 @@ export class WsClient {
                 this.migratedProjectListeners.forEach((listener) => listener(message.project));
                 return;
             // ── Cloud events ──────────────────────────────────────
+            case WI_BRIDGE_EVENTS.SIGN_IN_INITIATED:
+                this.signInInitiatedListeners.forEach((listener) => listener());
+                return;
             case WI_BRIDGE_EVENTS.AUTH_STATE_CHANGED:
                 this.authStateChangedListeners.forEach((listener) => listener(message.state));
                 return;
             case WI_BRIDGE_EVENTS.CONTEXT_STATE_CHANGED:
                 this.contextStateChangedListeners.forEach((listener) => listener(message.state));
+                return;
+            case WI_BRIDGE_EVENTS.CLONE_PROGRESS:
+                this.cloneProgressListeners.forEach((listener) => listener(message.stage));
                 return;
             case WI_BRIDGE_EVENTS.WS_RESPONSE:
             default:

@@ -96,8 +96,12 @@ export class ProjectExplorerEntryProvider implements vscode.TreeDataProvider<Pro
         }, async () => {
             try {
                 this._data = [];
-                const data = await getProjectStructureData();
-                this._data = data;
+                const { entries, projectName } = await getProjectStructureData();
+                this._data = entries;
+                if (this._treeView && projectName) {
+                    this._treeView.title = projectName;
+                }
+                commands.executeCommand('setContext', 'BI.project.empty', entries.length === 0);
                 this._onDidChangeTreeData.fire();
             } catch (err) {
                 console.error('[WI ProjectExplorer] Error during refresh:', err);
@@ -237,11 +241,11 @@ export class ProjectExplorerEntryProvider implements vscode.TreeDataProvider<Pro
     }
 }
 
-async function getProjectStructureData(): Promise<ProjectExplorerEntry[]> {
+async function getProjectStructureData(): Promise<{ entries: ProjectExplorerEntry[]; projectName: string | undefined }> {
     // Guard: Ballerina extension must be active to provide project structure
     const ballerinaExt = vscode.extensions.getExtension('wso2.ballerina');
     if (!ballerinaExt?.isActive) {
-        return [];
+        return { entries: [], projectName: undefined };
     }
 
     if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
@@ -249,26 +253,23 @@ async function getProjectStructureData(): Promise<ProjectExplorerEntry[]> {
 
         const stateContext: VisualizerLocation = await commands.executeCommand(SHARED_COMMANDS.GET_STATE_CONTEXT);
         if (!stateContext) {
-            return [];
+            return { entries: [], projectName: undefined };
         }
 
         const ballerinaWorkspace = stateContext.workspacePath;
         const workspaceFolderOfPackage = vscode.workspace.workspaceFolders
             .find(folder => folder.uri.fsPath === stateContext.projectPath);
 
-        let packageName: string;
-        let packagePath: string;
+        let projectName: string | undefined;
 
         if (!workspaceFolderOfPackage) {
             if (ballerinaWorkspace) {
-                packageName = path.basename(Uri.parse(stateContext.projectPath).path);
-                packagePath = stateContext.projectPath;
+                projectName = path.basename(Uri.parse(stateContext.workspacePath).path);
             } else {
-                return [];
+                return { entries: [], projectName: undefined };
             }
         } else {
-            packageName = workspaceFolderOfPackage.name;
-            packagePath = workspaceFolderOfPackage.uri.fsPath;
+            projectName = workspaceFolderOfPackage.name;
         }
 
         if (typeof stateContext === 'object' && stateContext !== null && 'projectStructure' in stateContext && stateContext.projectStructure !== null) {
@@ -293,16 +294,16 @@ async function getProjectStructureData(): Promise<ProjectExplorerEntry[]> {
             }
         }
 
-        return data;
+        return { entries: data, projectName: projectName };
     }
-    return [];
+    return { entries: [], projectName: undefined };
 }
 
 function generateTreeData(project: ProjectStructure, isSingleProject: boolean): ProjectExplorerEntry | undefined {
     const packageName = project.projectTitle || project.projectName;
     const packagePath = project.projectPath;
     const isLibrary = project.isLibrary ?? false;
-    const icon = isLibrary ? 'library' : 'project';
+    const icon = isLibrary ? 'library' : 'package';
 
     const projectRootEntry = new ProjectExplorerEntry(
         `${packageName}${isLibrary ? ' (Library)' : ''}`,
@@ -347,20 +348,20 @@ function getEntriesBI(project: ProjectStructure): ProjectExplorerEntry[] {
 
     // ---------- Listeners ----------
     if (!isLibrary) {
-        const listeners = new ProjectExplorerEntry(
-            'Listeners',
-            vscode.TreeItemCollapsibleState.Expanded,
-            null,
-            'radio',
-            false
-        );
-        listeners.resourceUri = Uri.parse(`bi-category:${projectPath}`);
-        listeners.contextValue = 'listeners';
-        listeners.children = getComponents(project.directoryMap[DIRECTORY_MAP.LISTENER], DIRECTORY_MAP.LISTENER, projectPath);
-        if (listeners.children.length > 0) {
-            listeners.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
+        const listenerChildren = getComponents(project.directoryMap[DIRECTORY_MAP.LISTENER], DIRECTORY_MAP.LISTENER, projectPath);
+        if (listenerChildren.length > 0) {
+            const listeners = new ProjectExplorerEntry(
+                'Listeners',
+                vscode.TreeItemCollapsibleState.Expanded,
+                null,
+                'radio',
+                false
+            );
+            listeners.resourceUri = Uri.parse(`bi-category:${projectPath}`);
+            listeners.contextValue = 'listeners';
+            listeners.children = listenerChildren;
+            entries.push(listeners);
         }
-        entries.push(listeners);
     }
 
     // ---------- Connections ----------
@@ -427,6 +428,38 @@ function getEntriesBI(project: ProjectStructure): ProjectExplorerEntry[] {
     }
     entries.push(dataMappers);
 
+    // ---------- Workflows ----------
+    const workflowChildren = getComponents(project.directoryMap[DIRECTORY_MAP.WORKFLOW] ?? [], DIRECTORY_MAP.WORKFLOW, projectPath);
+    if (workflowChildren.length > 0) {
+        const workflows = new ProjectExplorerEntry(
+            'Workflows',
+            vscode.TreeItemCollapsibleState.Expanded,
+            null,
+            'workflow',
+            false
+        );
+        workflows.resourceUri = Uri.parse(`bi-category:${projectPath}`);
+        workflows.contextValue = 'workflows';
+        workflows.children = workflowChildren;
+        entries.push(workflows);
+    }
+
+    // ---------- Workflow Activities ----------
+    const activityChildren = getComponents(project.directoryMap[DIRECTORY_MAP.ACTIVITY] ?? [], DIRECTORY_MAP.ACTIVITY, projectPath);
+    if (activityChildren.length > 0) {
+        const workflowActivities = new ProjectExplorerEntry(
+            'Workflow Activities',
+            vscode.TreeItemCollapsibleState.Expanded,
+            null,
+            'task',
+            false
+        );
+        workflowActivities.resourceUri = Uri.parse(`bi-category:${projectPath}`);
+        workflowActivities.contextValue = 'workflowActivities';
+        workflowActivities.children = activityChildren;
+        entries.push(workflowActivities);
+    }
+
     // ---------- Configurations ----------
     const configs = new ProjectExplorerEntry(
         'Configurations',
@@ -474,11 +507,16 @@ function getComponents(
         if (comp.type !== itemType) {
             continue;
         }
+        const entryIcon = itemType === DIRECTORY_MAP.WORKFLOW
+            ? 'workflow'
+            : itemType === DIRECTORY_MAP.ACTIVITY
+                ? 'task'
+                : comp.icon;
         const fileEntry = new ProjectExplorerEntry(
             comp.name,
             vscode.TreeItemCollapsibleState.None,
             comp.path,
-            comp.icon,
+            entryIcon,
             false,
             comp.position
         );

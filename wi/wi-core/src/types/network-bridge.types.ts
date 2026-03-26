@@ -20,12 +20,16 @@ import {
     BIProjectRequest,
     CreateMiProjectRequest,
     CreateMiProjectResponse,
+    CreateSiProjectRequest,
+    CreateSiProjectResponse,
     DownloadProgress,
     FetchSamplesRequest,
     FileOrDirRequest,
     FileOrDirResponse,
     GetConfigurationRequest,
     GetConfigurationResponse,
+    GetRecentProjectsResponse,
+    SetConfigurationRequest,
     GetMigrationToolsResponse,
     GetSubFoldersRequest,
     GetSubFoldersResponse,
@@ -51,7 +55,8 @@ import {
     ValidateProjectFormRequest,
     ValidateProjectFormResponse,
     WebviewContext,
-    WorkspaceRootResponse
+    WorkspaceRootResponse,
+    DefaultOrgNameResponse
 } from "./webview-api.types";
 import type {
     AuthState,
@@ -72,6 +77,8 @@ import type {
     WICloudFormContext,
     WICloudSubmitComponentsReq,
     WICloudSubmitComponentsResp,
+    GetCloudProjectsReq,
+    GetCloudProjectsResp,
 } from "./cloud.types";
 
 export const WI_BRIDGE_EVENTS = {
@@ -84,10 +91,16 @@ export const WI_BRIDGE_EVENTS = {
     // ── Cloud events ──────────────────────────────────────────
     AUTH_STATE_CHANGED: "wi.event.authStateChanged",
     CONTEXT_STATE_CHANGED: "wi.event.contextStateChanged",
+    CLONE_PROGRESS: "wi.event.cloneProgress",
+    SIGN_IN_INITIATED: "wi.event.signInInitiated",
 } as const;
+
+/** Granular stages emitted by the clone-project command so the webview can show accurate progress. */
+export type CloneProgressStage = "selecting_folder" | "fetching_components" | "selecting_component" | "cloning";
 
 export interface WIWsMethodParamsMap {
     getWebviewContext: void;
+    getRecentProjects: void;
     closeWebview: void;
     openBiExtension: void;
     openMiExtension: void;
@@ -97,10 +110,12 @@ export interface WIWsMethodParamsMap {
     selectFileOrFolderPath: void;
     getWorkspaceRoot: void;
     getConfiguration: GetConfigurationRequest;
+    setConfiguration: SetConfigurationRequest;
     getSupportedMIVersionsHigherThan: string;
     getSubFolderNames: GetSubFoldersRequest;
     askProjectDirPath: void;
     createMiProject: CreateMiProjectRequest;
+    createSiProject: CreateSiProjectRequest;
     fetchSamplesFromGithub: FetchSamplesRequest;
     downloadSelectedSampleFromGithub: SampleDownloadRequest;
     createBIProject: BIProjectRequest;
@@ -119,6 +134,8 @@ export interface WIWsMethodParamsMap {
     setWebviewCache: SetWebviewCacheParams;
     restoreWebviewCache: string;
     clearWebviewCache: string;
+    getDefaultOrgName: void;
+    getDefaultCreationPath: void;
 
     // ── Cloud methods ─────────────────────────────────────────
     getCloudFormContext: void;
@@ -126,6 +143,7 @@ export interface WIWsMethodParamsMap {
     closeCloudFormWebview: void;
     getAuthState: void;
     getContextState: void;
+    changeOrgContext: string;
     getLocalGitData: string;
     hasDirtyRepo: string;
     getConfigFileDrifts: GetConfigFileDriftsReq;
@@ -139,10 +157,12 @@ export interface WIWsMethodParamsMap {
     getGitRepoMetadata: GetGitMetadataReq;
     cloneRepositoryIntoCompDir: CloneRepositoryIntoCompDirReq;
     getConsoleUrl: void;
+    getCloudProjects: GetCloudProjectsReq;
 }
 
 export interface WIWsMethodResultMap {
     getWebviewContext: WebviewContext;
+    getRecentProjects: GetRecentProjectsResponse;
     closeWebview: void;
     openBiExtension: void;
     openMiExtension: void;
@@ -152,10 +172,12 @@ export interface WIWsMethodResultMap {
     selectFileOrFolderPath: FileOrDirResponse;
     getWorkspaceRoot: WorkspaceRootResponse;
     getConfiguration: GetConfigurationResponse;
+    setConfiguration: void;
     getSupportedMIVersionsHigherThan: GetSupportedMIVersionsResponse;
     getSubFolderNames: GetSubFoldersResponse;
     askProjectDirPath: ProjectDirResponse;
     createMiProject: CreateMiProjectResponse;
+    createSiProject: CreateSiProjectResponse;
     fetchSamplesFromGithub: GettingStartedData;
     downloadSelectedSampleFromGithub: void;
     createBIProject: void;
@@ -174,6 +196,8 @@ export interface WIWsMethodResultMap {
     setWebviewCache: void;
     restoreWebviewCache: unknown;
     clearWebviewCache: void;
+    getDefaultOrgName: DefaultOrgNameResponse;
+    getDefaultCreationPath: WorkspaceRootResponse;
 
     // ── Cloud methods ─────────────────────────────────────────
     getCloudFormContext: WICloudFormContext;
@@ -181,6 +205,7 @@ export interface WIWsMethodResultMap {
     closeCloudFormWebview: void;
     getAuthState: AuthState;
     getContextState: ContextStoreState;
+    changeOrgContext: void;
     getLocalGitData: GetLocalGitDataResp | undefined;
     hasDirtyRepo: boolean;
     getConfigFileDrifts: string[];
@@ -194,6 +219,7 @@ export interface WIWsMethodResultMap {
     getGitRepoMetadata: GetGitMetadataResp;
     cloneRepositoryIntoCompDir: string;
     getConsoleUrl: string;
+    getCloudProjects: GetCloudProjectsResp;
 }
 
 export type WIWsMethod = keyof WIWsMethodParamsMap;
@@ -258,6 +284,15 @@ export interface WIContextStateChangedEvent {
     state: ContextStoreState;
 }
 
+export interface WICloneProgressEvent {
+    type: typeof WI_BRIDGE_EVENTS.CLONE_PROGRESS;
+    stage: CloneProgressStage;
+}
+
+export interface WISignInInitiatedEvent {
+    type: typeof WI_BRIDGE_EVENTS.SIGN_IN_INITIATED;
+}
+
 export type WIBridgeRequest = WIWsRequest;
 
 export type WIBridgeResponse =
@@ -268,7 +303,9 @@ export type WIBridgeResponse =
     | WIMigrationToolLogsEvent
     | WIMigratedProjectEvent
     | WIAuthStateChangedEvent
-    | WIContextStateChangedEvent;
+    | WIContextStateChangedEvent
+    | WICloneProgressEvent
+    | WISignInInitiatedEvent;
 
 export type WITransportMode = "proxy" | "websocket";
 

@@ -26,10 +26,17 @@ import {
 	GitProvider,
 	ICreateNewIntegrationCmdParams,
 	makeURLSafe,
+	ContextItem,
+	UserInfo,
+	Organization,
+	Project,
+	ComponentKind,
+	CreateComponentReq,
 } from "@wso2/wso2-platform-core";
 import { type ExtensionContext, ProgressLocation, Uri, commands, window, workspace } from "vscode";
 import { ext } from "../../extensionVariables";
 import { initGit } from "../git/main";
+import { Repository } from "../git/git";
 import { getGitRemotes, getGitRoot } from "../git/util";
 import { contextStore, waitForContextStoreToLoad } from "../stores/context-store";
 import { dataCacheStore } from "../stores/data-cache-store";
@@ -39,6 +46,8 @@ import { updateContextFile } from "./create-directory-context-cmd";
 import { WICloudSubmitComponentsReq, WICloudSubmitComponentsResp } from "@wso2/wi-core";
 import { openCloudFormWebview } from "../../ws-managers/cloud/ws-manager";
 import { ProjectType, StateMachine, stateService } from "../../stateMachine";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import * as yaml from "js-yaml";
 
 
 const allIntegrationTypes = [
@@ -61,9 +70,17 @@ export function createNewComponentCommand(context: ExtensionContext) {
 					let selectedProject = selected?.project;
 					let selectedOrg = selected?.org;
 
-					if (!selectedProject || !selectedOrg) {
-						selectedOrg = await selectOrg(userInfo, "Select organization");
+					if (!selectedOrg || !selectedOrg) {
+						const contextFileEntry = await createProjectFromContext(userInfo, params?.workspaceDir);
+						selectedOrg = contextFileEntry?.org;
+						selectedProject = contextFileEntry?.project;
+					}
 
+					if (!selectedOrg) {
+						selectedOrg = await selectOrg(userInfo, "Select organization");
+					}
+
+					if (!selectedProject) {
 						const createdProjectRes = await selectProjectWithCreateNew(
 							selectedOrg,
 							`Loading projects from '${selectedOrg.name}'`,
@@ -235,9 +252,150 @@ export const submitCreateComponentHandler = async ({ createParams, org, project,
 	const gitRoot = await newGit?.getRepositoryRoot(workspaceFsPath);
 	const dotGit = await newGit?.getRepositoryDotGit(workspaceFsPath);
 	const repo = newGit.open(gitRoot, dotGit);
-	const head = await repo.getHEAD();
 
-	// Show a single progress notification for the entire batch
+	const workspaceCompId: string | null | undefined = ext.context.workspaceState.get("SOURCE_COMPONENT_ID");
+	if (workspaceCompId) {
+		const component = dataCacheStore.getState().getComponents(org.handle, project.handler)?.find(comp => comp.metadata?.id === workspaceCompId);
+		if (component?.metadata?.isPrebuilt) {
+			// if its pre-built integration, we need to update the existing component with new repo details instead of creating a new component.
+			return await handlePrebuiltComponentUpdate(workspaceCompId, component, org, project, createParams[0], workspaceFsPath, gitRoot!);
+		}
+	}
+
+	await checkComponentLimitReached(createParams, org);
+
+	// Verify if the source code has been pushed to remote repo
+	await checkIfSourcePushedToRemoteRepo(createParams, org, gitRoot!);
+
+	await window.withProgress(
+		{
+			title: totalCount === 1
+				? `Creating integration '${createParams[0].displayName || createParams[0].name}'... `
+				: `Creating ${totalCount} integrations... `,
+			location: ProgressLocation.Notification,
+			cancellable: false,
+		},
+		async (progress) => {
+			for (let i = 0; i < totalCount; i++) {
+				const createParam = createParams[i];
+				const componentName = createParam.displayName || createParam.name;
+
+				if (totalCount > 1) {
+					// Update progress
+					progress.report({
+						message: `(${i + 1}/${totalCount}) ${componentName}`,
+						increment: (100 / totalCount),
+					});
+				}
+
+				try {
+					const createdComponent = await ext.clients.rpcClient.createComponent(createParam);
+
+					if (createdComponent?.metadata?.id) {
+						result.created.push(createdComponent);
+
+						// Update component cache
+						const compCache = dataCacheStore.getState().getComponents(org.handle, project.handler);
+						dataCacheStore.getState().setComponents(org.handle, project.handler, [createdComponent, ...compCache]);
+
+						await updateCodeServerWithCreatedComp(createdComponent, org, repo!, project);
+					} else {
+						result.failed.push({ name: componentName, error: "Creation returned null" });
+					}
+				} catch (error) {
+					const errorMessage = error instanceof Error ? error.message : String(error);
+					result.failed.push({ name: componentName, error: errorMessage });
+					ext.logError(`Failed to create ${ext.terminologies?.componentTerm} ${componentName}:`, error as Error);
+				}
+			}
+		},
+	);
+
+	if (result.created.length > 0) {
+		clearCodeServerLocalStorage();
+		const projectCache = dataCacheStore.getState().getProjects(org?.handle);
+		updateContextFile(gitRoot, ext.authProvider?.getState().state.userInfo!, project, org, projectCache);
+		contextStore.getState().refreshState();
+	}
+
+	if (result.created.length > 0) {
+		let successMessage: string;
+		if (result.failed?.length === 0) {
+			successMessage = result.created.length === 1
+				? "Successfully created integration in the cloud"
+				: "Successfully created multiple integrations in the cloud";
+		} else {
+			successMessage = `Successfully created ${result.created.length} of ${totalCount} integrations in the cloud`;
+		}
+
+		const isWithinWorkspace = workspace.workspaceFolders?.some((item) => isSubpath(item.uri?.fsPath, workspaceFsPath));
+
+		if (workspace.workspaceFile) {
+			window.showErrorMessage("Please make sure newly created integrations are added to workspace.")
+			// const workspaceContent: WorkspaceConfig = JSON.parse(readFileSync(workspace.workspaceFile.fsPath, "utf8"));
+			// workspaceContent.folders = [
+			// 	...workspaceContent.folders,
+			// 	{
+			// 		name: createdComponent.metadata.name, // name not needed?
+			// 		path: path.normalize(path.relative(path.dirname(workspace.workspaceFile.fsPath), createParams.componentDir)),
+			// 	},
+			// ];
+		} else if (isWithinWorkspace) {
+			showViewInConsoleMessage(successMessage, org, project, result.created);
+		} else {
+			showReloadWorkspaceMessage(successMessage, workspaceFsPath);
+		}
+	}
+
+	if (result.failed?.length > 0) {
+		const failedNames = result.failed.map(item => item.name).join(", ");
+		window.showErrorMessage(`Failed to create the following integrations: ${failedNames}`);
+	}
+	return result;
+};
+
+const checkComponentLimitReached = async (createParams: CreateComponentReq[], org: Organization) => {
+	const subscriptions = await window.withProgress(
+		{ title: "Checking organization subscription...", location: ProgressLocation.Notification },
+		() =>
+			ext.clients?.rpcClient?.getSubscriptions({
+				orgId: org.id.toString(),
+				cloudType: "devant",
+			})
+	);
+	const isSubscribed = subscriptions?.list?.some(sub => sub.subscriptionType === 'devant-subscription');
+	if (!isSubscribed) {
+		const FREE_COMPONENT_LIMIT = 5;
+		const componentUsage = await window.withProgress(
+			{ title: "Checking integration usage within your organization...", location: ProgressLocation.Notification },
+			() =>
+				ext.clients?.rpcClient?.getComponentUsage({
+					orgId: org.id.toString(),
+					orgUuid: org.uuid,
+					cloudOrigin: "devant",
+				})
+		);
+		const remainingLimit = FREE_COMPONENT_LIMIT - componentUsage?.data?.billableComponentCount;
+		if (createParams?.length > remainingLimit) {
+			const limitReachedMsg = remainingLimit <= 0 ?
+				`Your organization has reached the free usage limit. Please upgrade your subscription to create more integrations` :
+				`You can only create ${remainingLimit} more integration(s). Please upgrade your subscription to create more integrations.`
+			window.showErrorMessage(limitReachedMsg, "Upgrade",).then((res) => {
+				if (res === "Upgrade") {
+					commands.executeCommand(
+						"vscode.open",
+						`${ext.config?.billingConsoleUrl}/cloud/devant/upgrade?orgId=${org.uuid.toString()}`,
+					);
+				}
+			});
+			throw new Error(limitReachedMsg);
+		}
+	}
+}
+
+
+const checkIfSourcePushedToRemoteRepo = async (createParams: CreateComponentReq[], org: Organization, gitRoot: string) => {
+	const totalCount = createParams.length;
 	await window.withProgress(
 		{
 			title: `Verifying source in remote repo`,
@@ -280,131 +438,179 @@ export const submitCreateComponentHandler = async ({ createParams, org, project,
 					} else if (repoMetadata?.metadata?.isBareRepo) {
 						throw new Error(`The selected repository appears to be empty. Please push your changes to remote repo and try again.`);
 					}
-
 				}
 			}
 		},
 	);
+}
 
-	// Show a single progress notification for the entire batch
-	await window.withProgress(
-		{
-			title: totalCount === 1
-				? `Creating integration '${createParams[0].displayName || createParams[0].name}'... `
-				: `Creating ${totalCount} integrations... `,
-			location: ProgressLocation.Notification,
-			cancellable: false,
-		},
-		async (progress) => {
-			for (let i = 0; i < totalCount; i++) {
-				const createParam = createParams[i];
-				const componentName = createParam.displayName || createParam.name;
+async function handlePrebuiltComponentUpdate(
+	workspaceCompId: string,
+	component: ComponentKind,
+	org: Organization,
+	project: Project,
+	createParam: WICloudSubmitComponentsReq['createParams'][number],
+	workspaceFsPath: string,
+	gitRoot: string,
+): Promise<WICloudSubmitComponentsResp> {
+	const result: WICloudSubmitComponentsResp = { created: [], failed: [], total: 1 };
+	try {
+		await window.withProgress(
+			{ title: "Updating prebuilt integration repository...", location: ProgressLocation.Notification },
+			() =>
+				ext.clients.rpcClient?.changePrebuiltIntegrationRepository({
+					componentId: workspaceCompId,
+					isPublicRepo: false,
+					orgHandler: org.handle,
+					orgId: org.id.toString(),
+					projectId: project.id,
+					srcGitRepoUrl: createParam.repoUrl,
+					repositorySubPath: path.relative(workspaceFsPath, createParam.componentDir),
+					originCloud: "devant",
+					repositoryBranch: createParam.branch,
+					secretRef: createParam.gitCredRef,
+				}),
+		);
+		result.created.push(component);
+		await ext.context.workspaceState.update("SOURCE_COMPONENT_ID", null);
 
-				if (totalCount > 1) {
-					// Update progress
-					progress.report({
-						message: `(${i + 1}/${totalCount}) ${componentName}`,
-						increment: (100 / totalCount),
-					});
-				}
-
-				try {
-					const createdComponent = await ext.clients.rpcClient.createComponent(createParam);
-
-					if (createdComponent?.metadata?.id) {
-						result.created.push(createdComponent);
-
-						// Update component cache
-						const compCache = dataCacheStore.getState().getComponents(org.handle, project.handler);
-						dataCacheStore.getState().setComponents(org.handle, project.handler, [createdComponent, ...compCache]);
-
-						if (ext.isDevantCloudEditor && head?.name) {
-							const commit = await repo.getCommit(head.name);
-							try {
-								await window.withProgress(
-									{ title: "Updating cloud editor with newly created component...", location: ProgressLocation.Notification },
-									() =>
-										ext.clients.rpcClient.updateCodeServer({
-											componentId: createdComponent.metadata.id,
-											orgHandle: org.handle,
-											orgId: org.id.toString(),
-											orgUuid: org.uuid,
-											projectId: project.id,
-											sourceCommitHash: commit.hash,
-										}),
-								);
-							} catch (err) {
-								ext.logError("Failed to updated code server after creating the component", err as Error);
-							}
-						}
-					} else {
-						result.failed.push({ name: componentName, error: "Creation returned null" });
-					}
-				} catch (error) {
-					const errorMessage = error instanceof Error ? error.message : String(error);
-					result.failed.push({ name: componentName, error: errorMessage });
-					ext.logError(`Failed to create ${ext.terminologies?.componentTerm} ${componentName}:`, error as Error);
-				}
-			}
-		},
-	);
-
-	if (result.created.length > 0) {
-		if (ext.isDevantCloudEditor) {
-			// Clear code server local storage data data
-			try {
-				await commands.executeCommand("devantEditor.clearLocalStorage");
-			} catch (err) {
-				ext.logError(`Failed to execute devantEditor.clearLocalStorage command: ${err}`, err as Error);
-			}
-		}
-
+		clearCodeServerLocalStorage();
 		const projectCache = dataCacheStore.getState().getProjects(org?.handle);
 		updateContextFile(gitRoot, ext.authProvider?.getState().state.userInfo!, project, org, projectCache);
 		contextStore.getState().refreshState();
-	}
-
-	if (result.failed?.length === 0 && result.created.length > 0) {
-		let successMessage = "Successfully create integration in the cloud";
-		if (result.created.length > 1) {
-			successMessage = "Successfully created all integrations in the cloud";
-		}
 
 		const isWithinWorkspace = workspace.workspaceFolders?.some((item) => isSubpath(item.uri?.fsPath, workspaceFsPath));
-
-		if (ext.isDevantCloudEditor) {
-			// TODO: this will not work when creating multiple components in the cloud editor
-			await ext.context.globalState.update("code-server-component-id", result.created[0]?.metadata?.id);
-		}
-
-		if (workspace.workspaceFile) {
-			window.showErrorMessage("Please make sure newly created integrations are added to workspace.")
-			// const workspaceContent: WorkspaceConfig = JSON.parse(readFileSync(workspace.workspaceFile.fsPath, "utf8"));
-			// workspaceContent.folders = [
-			// 	...workspaceContent.folders,
-			// 	{
-			// 		name: createdComponent.metadata.name, // name not needed?
-			// 		path: path.normalize(path.relative(path.dirname(workspace.workspaceFile.fsPath), createParams.componentDir)),
-			// 	},
-			// ];
-		} else if (isWithinWorkspace) {
-			window.showInformationMessage(successMessage, `View in console`).then(async (resp) => {
-				if (resp === `View in console`) {
-					let consoleProjectPath = `${ext.config?.devantConsoleUrl}/organizations/${org.handle}/projects/${project.id}`;
-					if (result.created.length === 1) {
-						consoleProjectPath += `/components/${result.created[0]?.metadata.handler}/overview`;
-					}
-					commands.executeCommand("vscode.open", consoleProjectPath,);
-				}
-			});
+		const successMessage = "Successfully updated the prebuilt integration repository with new repo details";
+		if (isWithinWorkspace) {
+			showViewInConsoleMessage(successMessage, org, project, result.created);
 		} else {
-			window.showInformationMessage(`${successMessage} Reload workspace to continue`, { modal: true }, "Continue").then(async (resp) => {
-				if (resp === "Continue") {
-					commands.executeCommand("vscode.openFolder", Uri.file(workspaceFsPath), { forceNewWindow: false });
-				}
-			});
+			showReloadWorkspaceMessage(successMessage, workspaceFsPath);
 		}
-
+	} catch (err) {
+		ext.logError(`Failed to update prebuilt integration repository for component ${component.metadata?.name}`, err as Error);
+		result.failed.push({ name: component.metadata?.name || "Unknown", error: `Failed to update prebuilt integration repository: ${(err as Error).message}` });
 	}
 	return result;
-};
+}
+
+async function updateCodeServerWithCreatedComp(
+	createdComponent: ComponentKind,
+	org: Organization,
+	repo: Repository,
+	project: Project,
+): Promise<void> {
+	try {
+		const head = await repo.getHEAD();
+		if (ext.isDevantCloudEditor && head?.name) {
+			const commit = await repo.getCommit(head.name);
+			try {
+				await window.withProgress(
+					{ title: "Updating cloud editor with newly created component...", location: ProgressLocation.Notification },
+					() =>
+						ext.clients.rpcClient.updateCodeServer({
+							componentId: createdComponent.metadata.id,
+							orgHandle: org.handle,
+							orgId: org.id.toString(),
+							orgUuid: org.uuid,
+							projectId: project.id,
+							sourceCommitHash: commit.hash,
+						}),
+				);
+			} catch (err) {
+				ext.logError("Failed to updated code server after creating the component", err as Error);
+			}
+		}
+	} catch (err) {
+		ext.logError("Failed to updated code server after creating the component", err as Error);
+	}
+}
+
+const showReloadWorkspaceMessage = (message: string, workspaceFsPath: string) => {
+	window.showInformationMessage(`${message} Reload workspace to continue`, { modal: true }, "Continue").then(async (resp) => {
+		if (resp === "Continue") {
+			commands.executeCommand("vscode.openFolder", Uri.file(workspaceFsPath), { forceNewWindow: false });
+		}
+	});
+}
+
+const showViewInConsoleMessage = (successMessage: string, org: Organization, project: Project, created: ComponentKind[]) => {
+	window.showInformationMessage(successMessage, `View in console`).then(async (resp) => {
+		if (resp === `View in console`) {
+			let consoleProjectPath = `${ext.config?.devantConsoleUrl}/organizations/${org.handle}/projects/${project.handler}`;
+			if (created.length === 1) {
+				consoleProjectPath += `/components/${created[0]?.metadata.handler}/overview`;
+			}
+			commands.executeCommand("vscode.open", consoleProjectPath,);
+		}
+	});
+}
+
+const clearCodeServerLocalStorage = async () => {
+	if (ext.isDevantCloudEditor) {
+		// Clear code server local storage data data
+		try {
+			await commands.executeCommand("devantEditor.clearLocalStorage");
+		} catch (err) {
+			ext.logError(`Failed to execute devantEditor.clearLocalStorage command: ${err}`, err as Error);
+		}
+	}
+}
+
+/** If project in context.yaml doesn't exist, create it automatically */
+const createProjectFromContext = async (userInfo: UserInfo, workspacePath?: string): Promise<{ org?: Organization; project?: Project }> => {
+	try {
+		const contextFilePath = path.join(workspacePath || "", ".choreo", "context.yaml");
+		if (existsSync(contextFilePath)) {
+			let parsedData: ContextItem[] = yaml.load(readFileSync(contextFilePath, "utf8")) as any;
+			if (!Array.isArray(parsedData) && (parsedData as any)?.org && (parsedData as any)?.project) {
+				parsedData = [{ org: (parsedData as any).org, project: (parsedData as any).project }];
+			}
+
+			if (!parsedData || parsedData.length !== 1) {
+				return;
+			}
+
+			const newContextItem = parsedData[0];
+			const matchingOrg = userInfo.organizations.find((org) => org.handle === newContextItem.org);
+			if (!matchingOrg) {
+				return;
+			}
+
+			const projects = await window.withProgress(
+				{
+					title: `Fetching cloud projects of organization ${matchingOrg.name}...`,
+					location: ProgressLocation.Notification,
+				},
+				() => ext.clients.rpcClient.getProjects(matchingOrg.id.toString()),
+			);
+			dataCacheStore.getState().setProjects(matchingOrg.handle, projects);
+
+			let projectName = newContextItem.project;
+			let suffix = 1;
+			while (projects.some((project) => project.handler === projectName || project.name === projectName)) {
+				projectName = `${newContextItem.project}-${suffix}`;
+				suffix++;
+			}
+
+			const createdProject = await window.withProgress(
+				{
+					title: `Creating new cloud project ${matchingOrg.name}...`,
+					location: ProgressLocation.Notification,
+				},
+				() => ext.clients.rpcClient.createProject({
+					orgId: matchingOrg.id.toString(),
+					orgHandler: matchingOrg.handle,
+					projectName: projectName,
+					region: ext.authProvider?.getState().state.region || "US"
+				}),
+			);
+
+			const newList: ContextItem[] = [{ org: matchingOrg.handle, project: createdProject.handler }];
+			writeFileSync(contextFilePath, yaml.dump(newList));
+			return { org: matchingOrg, project: createdProject };
+		}
+	} catch (err) {
+		ext.logError(`Failed to get context file entry`, err as Error);
+		return
+	}
+}

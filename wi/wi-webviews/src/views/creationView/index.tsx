@@ -16,87 +16,77 @@
  * under the License.
  */
 
-import { useState, useEffect } from "react";
-import {
-    Icon,
-    ProgressIndicator,
-    Typography
-} from "@wso2/ui-toolkit";
 import styled from "@emotion/styled";
-import { BIProjectForm } from "./biForm";
+import { Icon, ProgressIndicator } from "@wso2/ui-toolkit";
+import { useEffect, useState } from "react";
 import { useVisualizerContext } from "../../contexts/WsContext";
+import {
+    BackButton,
+    FormBody,
+    FormPanel,
+    FormPanelHeader,
+    FormPanelSubtitle,
+    FormPanelTitle,
+    HeaderRow,
+    HeaderSubtitle,
+    HeaderText,
+    HeaderTitle,
+    PageBackdrop,
+    PageContainer,
+} from "../shared/FormPageLayout";
+import {
+    CREATION_RUNTIME_HELP,
+    RUNTIME_DISPLAY_LABEL,
+    type WIRuntime,
+    getDefaultRuntime,
+    loadEnabledRuntimes,
+} from "../shared/runtime";
+import { BIProjectForm } from "./biForm";
 import { MiProjectWizard } from "./miForm";
-import { IntegrationTypeSelector } from "../../components/IntegrationTypeSelector";
+import { SiProjectWizard } from "./siForm";
 
-const FormContainer = styled.div`
+const LoadingContainer = styled.div`
     display: flex;
-    flex-direction: column;
-    overflow: hidden;
+    justify-content: center;
     align-items: center;
-    height: 100vh;
-    max-width: 600px;
-    margin: 0 auto;
-    margin-top: calc(25vh - 80px);
+    min-height: 320px;
 `;
 
-const TitleContainer = styled.div`
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 32px;
-`;
-
-const IconButton = styled.div`
-    cursor: pointer;
-    border-radius: 4px;
-    width: 20px;
-    height: 20px;
-    font-size: 20px;
-    &:hover {
-        background-color: var(--vscode-toolbar-hoverBackground);
-    }
-`;
-
-const DropdownContainer = styled.div`
-    margin-bottom: 20px;
-`;
-
-export type RuntimeType = "WSO2: BI" | "WSO2: MI" | "WSO2: SI";
-
-export function CreationView({ onBack }: { onBack?: () => void }) {
-    const [enabledRuntimes, setEnabledRuntimes] = useState<RuntimeType[]>(["WSO2: BI"]);
-    const [projectType, setProjectType] = useState<RuntimeType>("WSO2: BI");
-    const [isLoading, setIsLoading] = useState(true);
+export function CreationView({
+    onBack,
+    runtime,
+}: { onBack?: () => void; runtime?: WIRuntime }) {
+    const [projectType, setProjectType] = useState<WIRuntime | null>(
+        runtime ?? null,
+    );
+    const [isLoading, setIsLoading] = useState(runtime === undefined);
     const { wsClient } = useVisualizerContext();
 
-    // Load enabled runtimes from VS Code configuration (three individual boolean settings)
     useEffect(() => {
-        const loadDefaultRuntime = async () => {
+        if (runtime) {
+            setProjectType(runtime);
+            setIsLoading(false);
+            return;
+        }
+
+        const resolveRuntime = async () => {
+            setIsLoading(true);
             try {
-                const [biResp, miResp, siResp] = await Promise.all([
-                    wsClient.getConfiguration({ section: "integrator.enabledRuntimes.bi" }),
-                    wsClient.getConfiguration({ section: "integrator.enabledRuntimes.mi" }),
-                    wsClient.getConfiguration({ section: "integrator.enabledRuntimes.si" }),
-                ]);
-
-                const runtimes: RuntimeType[] = [];
-                if (biResp?.value === true) { runtimes.push("WSO2: BI"); }
-                if (miResp?.value === true) { runtimes.push("WSO2: MI"); }
-                if (siResp?.value === true) { runtimes.push("WSO2: SI"); }
-
-                // Enforce at least one runtime (extension will have already corrected settings)
-                const resolved = runtimes.length > 0 ? runtimes : ["WSO2: BI" as RuntimeType];
-                setEnabledRuntimes(resolved);
-                setProjectType(resolved[0]);
+                const enabledRuntimes = await loadEnabledRuntimes(wsClient);
+                setProjectType(getDefaultRuntime(enabledRuntimes));
             } catch (error) {
-                console.warn("Failed to load default integrator config, using fallback:", error);
+                console.warn(
+                    "Failed to load default integrator config, using fallback:",
+                    error,
+                );
+                setProjectType("WSO2: BI");
             } finally {
                 setIsLoading(false);
             }
         };
 
-        loadDefaultRuntime();
-    }, []);
+        resolveRuntime();
+    }, [runtime, wsClient]);
 
     const gotToWelcome = () => {
         if (onBack) {
@@ -104,37 +94,57 @@ export function CreationView({ onBack }: { onBack?: () => void }) {
         }
     };
 
-    // Show loading while fetching configuration
-    if (isLoading) {
+    if (isLoading || !projectType) {
         return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px' }}>
-                <ProgressIndicator />
-            </div>
+            <PageBackdrop>
+                <PageContainer>
+                    <LoadingContainer>
+                        <ProgressIndicator />
+                    </LoadingContainer>
+                </PageContainer>
+            </PageBackdrop>
         );
     }
 
     return (
-        <div style={{ position: 'absolute', background: 'var(--vscode-editor-background)', height: '100vh', width: '100%', overflow: 'hidden' }} >
-            <FormContainer>
-                <div style={{ width: "100%" }}>
-                    <TitleContainer>
-                        <IconButton onClick={gotToWelcome}>
-                            <Icon name="bi-arrow-back" iconSx={{ color: "var(--vscode-foreground)" }} />
-                        </IconButton>
-                        <Typography variant="h2">Create Your Integration</Typography>
-                    </TitleContainer>
-                    {enabledRuntimes.length > 1 && (
-                        <IntegrationTypeSelector
-                            value={projectType}
-                            options={enabledRuntimes.map((r) => ({ label: r, value: r }))}
-                            onChange={(value) => setProjectType(value as RuntimeType)}
-                        />
-                    )}
-                </div>
-                {projectType === "WSO2: BI" && <BIProjectForm />}
-                {projectType === "WSO2: MI" && <MiProjectWizard />}
-                {projectType === "WSO2: SI" && <MiProjectWizard />}
-            </FormContainer>
-        </div>
+        <PageBackdrop>
+            <PageContainer>
+                <FormPanel>
+                    <FormPanelHeader>
+                        <HeaderRow>
+                            <BackButton type="button" onClick={gotToWelcome} title="Go back">
+                                <Icon
+                                    name="arrow-left"
+                                    isCodicon
+                                    sx={{
+                                        width: "16px",
+                                        height: "16px",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                    }}
+                                    iconSx={{
+                                        color: "var(--vscode-foreground)",
+                                        fontSize: "16px",
+                                        lineHeight: 1,
+                                    }}
+                                />
+                            </BackButton>
+                            <HeaderText>
+                                <HeaderTitle variant="h2">Create Integration</HeaderTitle>
+                                <HeaderSubtitle>
+                                    Start building a new integration.
+                                </HeaderSubtitle>
+                            </HeaderText>
+                        </HeaderRow>
+                    </FormPanelHeader>
+                    <FormBody>
+                        {projectType === "WSO2: BI" && <BIProjectForm />}
+                        {projectType === "WSO2: MI" && <MiProjectWizard />}
+                        {projectType === "WSO2: SI" && <SiProjectWizard />}
+                    </FormBody>
+                </FormPanel>
+            </PageContainer>
+        </PageBackdrop>
     );
 }

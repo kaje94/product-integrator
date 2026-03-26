@@ -16,9 +16,9 @@
  * under the License.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
-import * as os from "os";
-import { join } from "path";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { basename, join } from "path";
+import { tmpdir } from "os";
 import {
 	WICommandIds,
 	type ComponentKind,
@@ -30,11 +30,23 @@ import {
 } from "@wso2/wso2-platform-core";
 import { type ExtensionContext, ProgressLocation, type QuickPickItem, QuickPickItemKind, Uri, commands, window } from "vscode";
 import { ext } from "../../extensionVariables";
+import { BridgeLayer } from "../../BridgeLayer";
 import { initGit } from "../git/main";
 import { dataCacheStore } from "../stores/data-cache-store";
-import { createDirectory, openDirectory } from "../../utils/pathUtils";
+import { createDirectory, getDefaultCreationPath, openDirectory } from "../../utils/pathUtils";
 import { getUserInfoForCmd, isRpcActive, selectOrg, selectProject, setExtensionName } from "./cmd-utils";
 import { updateContextFile } from "./create-directory-context-cmd";
+
+/**
+ * Error thrown when a user cancels an operation.
+ * This is used to distinguish user-initiated cancellations from actual errors.
+ */
+class UserCancellationError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "UserCancellationError";
+	}
+}
 
 export function cloneRepoCommand(context: ExtensionContext) {
 	context.subscriptions.push(
@@ -54,21 +66,23 @@ export function cloneRepoCommand(context: ExtensionContext) {
 							`Select the project from '${selectedOrg.name}', that needs to be cloned`,
 						));
 
+					BridgeLayer.notifyCloneProgress("selecting_folder");
 					const cloneDir = await window.showOpenDialog({
 						canSelectFolders: true,
 						canSelectFiles: false,
 						canSelectMany: false,
 						title: "Select a folder to clone the project repository",
-						defaultUri: Uri.file(os.homedir()),
+						defaultUri: Uri.file(getDefaultCreationPath()),
 					});
 
 					if (cloneDir === undefined || cloneDir.length === 0) {
-						throw new Error("Directory is required in order to clone the repository in");
+						throw new UserCancellationError("Directory selection was cancelled");
 					}
 
 					const selectedCloneDir = cloneDir[0];
 					const projectCache = dataCacheStore.getState().getProjects(selectedOrg.handle);
 
+					BridgeLayer.notifyCloneProgress("fetching_components");
 					let components: ComponentKind[] = [];
 					if (params?.component) {
 						components = [params?.component];
@@ -112,21 +126,32 @@ export function cloneRepoCommand(context: ExtensionContext) {
 					}
 
 					if (repoSet.size > 1) {
-						const quickPickOptions: QuickPickItem[] = [
-							{
-								label: "Clone entire project",
-								detail: "Clone all the repositories associated with the selected project",
-								picked: true,
-							},
-							{ kind: QuickPickItemKind.Separator, label: `Clone ${ext.terminologies?.articleComponentTerm} of the project` },
-							...components.map((item) => ({
+						BridgeLayer.notifyCloneProgress("selecting_component");
+						const componentItems: QuickPickItem[] = components
+							.filter((c) => getComponentKindRepoSource(c.spec.source).repo)
+							.map((item) => ({
 								label: item.metadata.name,
 								detail: `Repository: ${getComponentKindRepoSource(item.spec.source).repo}`,
 								item,
-							})),
-						];
+							}));
+						const quickPickOptions: QuickPickItem[] = params?.integrationOnly
+							? componentItems
+							: [
+								{
+									label: "Clone entire project",
+									detail: "Clone all the repositories associated with the selected project",
+									picked: true,
+								},
+								{ kind: QuickPickItemKind.Separator, label: `Clone ${ext.terminologies?.articleComponentTerm} of the project` },
+								...componentItems,
+							];
+						const componentTermPlural = ext.terminologies?.componentTermPlural ?? "integrations";
+						const articleComponentTerm = ext.terminologies?.articleComponentTerm ?? "an integration";
 						const selection = await window.showQuickPick(quickPickOptions, {
-							title: "Select an option",
+							title: params?.integrationOnly ? "Select an integration or library to open" : "Select an option",
+							placeHolder: params?.integrationOnly
+								? `This project contains ${componentTermPlural} across multiple repositories. Select which ${articleComponentTerm} you'd like to clone and open.`
+								: undefined,
 						});
 
 						if (selection?.label === "Clone entire project") {
@@ -135,12 +160,13 @@ export function cloneRepoCommand(context: ExtensionContext) {
 							repoSet.clear();
 							repoSet.add(getComponentKindRepoSource((selection as any)?.item.spec.source).repo);
 						} else {
-							throw new Error(
-								`Repository or ${ext.terminologies?.componentTerm} selection is required in order to clone the repository`,
+							throw new UserCancellationError(
+								`${ext.terminologies?.componentTerm || "Component"} selection was cancelled`,
 							);
 						}
 					}
 
+					BridgeLayer.notifyCloneProgress("cloning");
 					let selectedRepoUrl = "";
 					if (repoSet.size === 1) {
 						[selectedRepoUrl] = repoSet;
@@ -151,16 +177,36 @@ export function cloneRepoCommand(context: ExtensionContext) {
 							throw new Error("Failed to parse selected Git URL");
 						}
 
+						const userInfo = ext.authProvider?.getState()?.state?.userInfo;
+						if (!userInfo) {
+							throw new Error("User information is not available. Please ensure you are logged in.");
+						}
+
 						const latestDeploymentTrack = params?.component?.deploymentTracks?.find((item) => item.latest);
+
+						if (params?.component?.metadata?.isPrebuilt) {
+							// For prebuilt integrations, we clone only the specific subpath of the repo that contains the component source,
+							const subPath = getComponentKindRepoSource(params.component.spec.source)?.path || "";
+							const clonedPath = await cloneRepoSubpathOnly(
+								selectedCloneDir.fsPath,
+								selectedRepoUrl,
+								latestDeploymentTrack?.branch,
+								subPath,
+								[".choreo", ".git"]
+							);
+
+							// Store the component in global state after cloning it.
+							// When cloned directory is opened, we need to remove it from global state & add it to workspace state
+							await ext.context.globalState.update("SOURCE_COMPONENT_ID", params.component.metadata.id);
+							updateContextFile(clonedPath, userInfo, selectedProject, selectedOrg, projectCache);
+							await openClonedDirectory(clonedPath);
+							return;
+						}
 						const clonedResp = await cloneRepositoryWithProgress(selectedCloneDir.fsPath, [
 							{ branch: latestDeploymentTrack?.branch, repoUrl: selectedRepoUrl },
 						]);
 
 						// set context.yaml
-						const userInfo = ext.authProvider?.getState()?.state?.userInfo;
-						if (!userInfo) {
-							throw new Error("User information is not available. Please ensure you are logged in.");
-						}
 						updateContextFile(clonedResp[0].clonedPath, userInfo, selectedProject, selectedOrg, projectCache);
 						const subDir = params?.component?.spec?.source ? getComponentKindRepoSource(params?.component?.spec?.source)?.path || "" : "";
 						const subDirFullPath = join(clonedResp[0].clonedPath, subDir);
@@ -207,6 +253,9 @@ export function cloneRepoCommand(context: ExtensionContext) {
 					}
 				}
 			} catch (err: any) {
+				if (err instanceof UserCancellationError) {
+					throw err;
+				}
 				console.error("Failed to clone project", err);
 				window.showErrorMessage(err?.message || "Failed to clone project");
 			}
@@ -293,13 +342,41 @@ async function ensureMIFilesIfEmpty(name: string, directoryPath: string, integra
 	}
 }
 
+/**
+ * Clones a repo into a temp directory, copies only the specified subpath
+ * into the target directory, and cleans up the temp directory.
+ * This avoids placing the full repo in the target when only a subpath is needed.
+ */
+async function cloneRepoSubpathOnly(
+	targetDir: string,
+	repoUrl: string,
+	branch: string | undefined,
+	subPath: string,
+	ignoredDirs: string[] = [],
+): Promise<string> {
+
+	const tempDir = mkdtempSync(join(tmpdir(), "wi-clone-"));
+	try {
+		const clonedResp = await cloneRepositoryWithProgress(tempDir, [{ branch, repoUrl }], targetDir);
+		const sourcePath = join(clonedResp[0].clonedPath, subPath);
+		cpSync(sourcePath, targetDir, {
+			recursive: true,
+			filter: (src) => !ignoredDirs.includes(basename(src)),
+		});
+		return targetDir;
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+}
+
 const cloneRepositoryWithProgress = async (
 	parentPath: string,
 	repos: { branch?: string; repoUrl?: string }[],
+	displayPath?: string,
 ): Promise<{ clonedPath: string; gitUrl: string }[]> => {
 	return await window.withProgress(
 		{
-			title: `Cloning repository into ${parentPath}.`,
+			title: `Cloning repository into ${displayPath || parentPath}.`,
 			location: ProgressLocation.Notification,
 			cancellable: true,
 		},

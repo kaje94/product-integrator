@@ -39,12 +39,24 @@ export interface RunCommandResponse {
     error?: string;
 }
 
+export interface RecentProjectItem {
+    path: string;
+    label: string;
+    description?: string;
+    isWorkspace?: boolean;
+}
+
+export interface GetRecentProjectsResponse {
+    projects: RecentProjectItem[];
+}
+
 export interface FileOrDirResponse {
     path: string;
 }
 
 export interface FileOrDirRequest {
     isFile?: boolean;
+    startPath?: string;
 }
 
 export interface WorkspaceRootResponse {
@@ -57,6 +69,14 @@ export interface GetConfigurationRequest {
 
 export interface GetConfigurationResponse {
     value: any;
+}
+
+export type ConfigurationScope = "global" | "workspace" | "workspaceFolder";
+
+export interface SetConfigurationRequest {
+    section: string;
+    value: any;
+    scope?: ConfigurationScope;
 }
 
 export interface GetSubFoldersRequest {
@@ -89,6 +109,16 @@ export interface CreateMiProjectResponse {
     filePath: string;
 }
 
+export interface CreateSiProjectRequest {
+    directory: string;
+    name: string;
+    open: boolean;
+}
+
+export interface CreateSiProjectResponse {
+    filePath: string;
+}
+
 export interface GettingStartedSample {
     category: number;
     priority: number;
@@ -115,14 +145,15 @@ export interface SampleDownloadRequest {
 }
 
 export interface BIProjectRequest {
-    projectName: string;
-    packageName: string;
+    projectName?: string;
+    packageName?: string;
     projectPath: string;
     createDirectory: boolean;
     createAsWorkspace?: boolean;
     workspaceName?: string;
     orgName?: string;
     version?: string;
+    isLibrary?: boolean;
 }
 
 export interface SemanticVersion {
@@ -187,6 +218,7 @@ export interface ImportIntegrationWsRequest {
     commandName: string;
     packageName: string;
     sourcePath: string;
+    orgName?: string;
     parameters?: Record<string, any>;
 }
 
@@ -250,6 +282,7 @@ export interface ValidateProjectFormRequest {
     projectPath: string;
     projectName: string;
     createDirectory: boolean;
+    createAsWorkspace?: boolean;
 }
 
 export interface ValidateProjectFormResponse {
@@ -267,8 +300,14 @@ export interface SetWebviewCacheParams {
     cacheKey: string;
     data: unknown;
 }
+
+export interface DefaultOrgNameResponse {
+    orgName: string;
+}
+
 export interface WIVisualizerAPI {
     getWebviewContext: () => Promise<WebviewContext>;
+    getRecentProjects: () => Promise<GetRecentProjectsResponse>;
     closeWebview: () => void;
     openBiExtension: () => void;
     openMiExtension: () => void;
@@ -278,10 +317,12 @@ export interface WIVisualizerAPI {
     selectFileOrFolderPath: () => Promise<FileOrDirResponse>;
     getWorkspaceRoot: () => Promise<WorkspaceRootResponse>;
     getConfiguration: (params: GetConfigurationRequest) => Promise<GetConfigurationResponse>;
+    setConfiguration: (params: SetConfigurationRequest) => Promise<void>;
     getSupportedMIVersionsHigherThan: (version: string) => Promise<GetSupportedMIVersionsResponse>;
     getSubFolderNames: (params: GetSubFoldersRequest) => Promise<GetSubFoldersResponse>;
     askProjectDirPath: () => Promise<ProjectDirResponse>;
     createMiProject: (params: CreateMiProjectRequest) => Promise<CreateMiProjectResponse>;
+    createSiProject: (params: CreateSiProjectRequest) => Promise<CreateSiProjectResponse>;
     fetchSamplesFromGithub: (params: FetchSamplesRequest) => Promise<GettingStartedData>;
     downloadSelectedSampleFromGithub: (params: SampleDownloadRequest) => void;
     createBIProject: (params: BIProjectRequest) => Promise<void>;
@@ -300,4 +341,6 @@ export interface WIVisualizerAPI {
     setWebviewCache: (params: SetWebviewCacheParams) => Promise<void>;
     restoreWebviewCache: (cacheKey: string) => Promise<unknown>;
     clearWebviewCache: (cacheKey: string) => Promise<void>;
+    getDefaultOrgName: () => Promise<DefaultOrgNameResponse>;
+    getDefaultCreationPath: () => Promise<WorkspaceRootResponse>;
 }

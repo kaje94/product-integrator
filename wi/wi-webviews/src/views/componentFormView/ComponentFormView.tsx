@@ -26,6 +26,9 @@ import {
 	AuthSectionWrap,
 	ErrorBanner,
 	FooterRow,
+	FormBody,
+	FormPanel,
+	PageBackdrop,
 	PageContainer,
 	SubmitButton,
 	TitleRow,
@@ -61,16 +64,32 @@ export function ComponentFormView() {
 	const { wsClient } = useVisualizerContext();
 
 	if (authStateLoading) {
-		return <ProgressIndicator />
+		return (
+			<PageBackdrop>
+				<PageContainer>
+					<FormPanel>
+						<FormBody style={{ justifyContent: "center", alignItems: "center", minHeight: 320 }}>
+							<ProgressIndicator />
+						</FormBody>
+					</FormPanel>
+				</PageContainer>
+			</PageBackdrop>
+		);
 	}
 
 	if (!authState?.userInfo) {
 		return (
-			<AuthSectionWrap>
-				<div style={{ marginBottom: 8 }}>Your session has expired. Please sign in again to deploy your integration.</div>
-				<Button onClick={() => wsClient.runCommand({ command: WICommandIds.SignIn, args: [] })}>Sign In</Button>
-			</AuthSectionWrap>
-		)
+			<PageBackdrop>
+				<PageContainer>
+					<AuthSectionWrap>
+						<div>Your session has expired. Please sign in again to deploy your integration.</div>
+						<Button appearance="primary" onClick={() => wsClient.runCommand({ command: WICommandIds.SignIn, args: [] })}>
+							Sign In
+						</Button>
+					</AuthSectionWrap>
+				</PageContainer>
+			</PageBackdrop>
+		);
 	}
 
 	return <ComponentForm />;
@@ -150,16 +169,16 @@ function ComponentForm() {
 			if (!hasSelected || !validate()) { return; }
 
 			let workspaceFsPath = params!.workspaceFsPath;
-			let repoUrl: string | null = null;
-			let branch: string | null = null;
-			let gitProvider: string | null = null;
-			let credential: string | null = null;
+			let repoUrl: string = gitConfigDataRef?.current?.gitRemote ?? "";
+			let branch: string = gitConfigDataRef?.current?.branch ?? "";
+			let gitProvider: string = gitConfigDataRef?.current?.gitProvider ?? "";
+			let credential: string = gitConfigDataRef?.current?.credential ?? "";
 
 			if (isNewCodeServerComp) {
 				const repoInit = repoInitDataRef.current;
 				if (!repoInit) { throw new Error("Repo init data is missing"); }
 
-				repoUrl = buildGitURL(repoInit.orgHandler, repoInit.repo, repoInit.gitProvider, false, repoInit.serverUrl);
+				const repoUrl = buildGitURL(repoInit.orgHandler, repoInit.repo, repoInit.gitProvider, false, repoInit.serverUrl);
 
 				// Validate subpath via getGitRepoMetadata
 				const subPath = repoInit.subPath.startsWith("/") ? repoInit.subPath.slice(1) : repoInit.subPath;
@@ -237,10 +256,11 @@ function ComponentForm() {
 			};
 
 			const created = await wsClient.submitComponents(req);
-			if (created.created?.length === created.total) {
-				wsClient.closeCloudFormWebview();
-			} else {
+			if (created.failed?.length > 0) {
 				console.error("Some components failed to create", created);
+			}
+			if (created.created?.length > 0) {
+				wsClient.closeCloudFormWebview();
 			}
 		},
 		onError: (error) => {
@@ -257,71 +277,78 @@ function ComponentForm() {
 	// ── Render ───────────────────────────────────────────────────────────────
 
 	return (
-		<PageContainer>
-			{/* Header */}
-			<TitleRow>
-				<Typography variant="h1">Deploy {isBatch ? "Integrations" : "Integration"}</Typography>
-			</TitleRow>
+		<PageBackdrop>
+			<PageContainer>
+				<FormPanel>
+					<FormBody>
+						{/* Header */}
+						<TitleRow>
+							<Typography variant="h1">Deploy {isBatch ? "Integrations" : "Integration"}</Typography>
+						</TitleRow>
 
-			{/* Submit error */}
-			{submitError && (
-				<ErrorBanner>
-					{submitError?.message.split("\n").map((line, i) => (
-						<div key={i}>{line}</div>
-					))}
-				</ErrorBanner>
-			)}
+						{/* Submit error */}
+						{submitError && (
+							<ErrorBanner>
+								{submitError?.message.split("\n").map((line, i) => (
+									<div key={i}>{line}</div>
+								))}
+							</ErrorBanner>
+						)}
 
-			{/* Component list */}
-			<ComponentList
-				integrations={params?.integrations ?? []}
-				formState={formState}
-				isBatch={isBatch}
-				selectedCount={selectedCount}
-				editingIndex={editingIndex}
-				onToggle={handleToggle}
-				onNameChange={handleNameChange}
-				onNameCommit={handleNameCommit}
-				onIntegrationTypeChange={handleIntegrationTypeChange}
-				onEditStart={(index) => setEditingIndex(index)}
-			/>
+						{/* Component list */}
+						<ComponentList
+							project={params?.project}
+							integrations={params?.integrations ?? []}
+							formState={formState}
+							isBatch={isBatch}
+							selectedCount={selectedCount}
+							editingIndex={editingIndex}
+							onToggle={handleToggle}
+							onNameChange={handleNameChange}
+							onNameCommit={handleNameCommit}
+							onIntegrationTypeChange={handleIntegrationTypeChange}
+							onEditStart={(index) => setEditingIndex(index)}
+						/>
 
-			{/* Git configuration — switch between existing repo and new repo init */}
-			{params && !isNewCodeServerComp && (
-				<ExistingGitConfigSection
-					wsClient={wsClient}
-					workspaceFsPath={params.workspaceFsPath}
-					orgId={params?.org?.id?.toString()}
-					orgUuid={params?.org?.uuid}
-					orgHandle={params?.org?.handle}
-					consoleUrl={consoleUrl}
-					onBlockCreationChange={setBlockCreation}
-					onGitConfigDataChange={(data) => { gitConfigDataRef.current = data; }}
-				/>
-			)}
+						{/* Git configuration — switch between existing repo and new repo init */}
+						{params && !isNewCodeServerComp && (
+							<ExistingGitConfigSection
+								wsClient={wsClient}
+								workspaceFsPath={params.workspaceFsPath}
+								orgId={params?.org?.id?.toString()}
+								orgUuid={params?.org?.uuid}
+								orgHandle={params?.org?.handle}
+								consoleUrl={consoleUrl}
+								onBlockCreationChange={setBlockCreation}
+								onGitConfigDataChange={(data) => { gitConfigDataRef.current = data; }}
+							/>
+						)}
 
-			{params && isNewCodeServerComp && (
-				<RepoInitSection
-					wsClient={wsClient}
-					orgId={params?.org?.id?.toString()}
-					orgUuid={params?.org?.uuid}
-					orgHandle={params?.org?.handle}
-					consoleUrl={consoleUrl}
-					onValidityChange={setIsRepoInitValid}
-					onRepoInitDataChange={(data) => { repoInitDataRef.current = data; }}
-				/>
-			)}
+						{params && isNewCodeServerComp && (
+							<RepoInitSection
+								wsClient={wsClient}
+								orgId={params?.org?.id?.toString()}
+								orgUuid={params?.org?.uuid}
+								orgHandle={params?.org?.handle}
+								consoleUrl={consoleUrl}
+								onValidityChange={setIsRepoInitValid}
+								onRepoInitDataChange={(data) => { repoInitDataRef.current = data; }}
+							/>
+						)}
 
-			{/* Footer */}
-			<FooterRow>
-				<SubmitButton
-					appearance="primary"
-					onClick={() => submit()}
-					disabled={isDeployDisabled}
-				>
-					{isSubmitting ? "Deploying..." : selectedCount > 1 ? "Deploy All" : "Deploy"}
-				</SubmitButton>
-			</FooterRow>
-		</PageContainer>
+						{/* Footer */}
+						<FooterRow>
+							<SubmitButton
+								appearance="primary"
+								onClick={() => submit()}
+								disabled={isDeployDisabled}
+							>
+								{isSubmitting ? "Deploying..." : selectedCount > 1 ? "Deploy All" : "Deploy"}
+							</SubmitButton>
+						</FooterRow>
+					</FormBody>
+				</FormPanel>
+			</PageContainer>
+		</PageBackdrop>
 	);
 }
