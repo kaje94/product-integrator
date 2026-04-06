@@ -35,6 +35,18 @@ on:
         description: 'Specify Ballerina version to use'
         required: false
         type: string
+      ballerina_extension_source:
+        description: 'Choose whether to bundle Ballerina from GitHub VSIX or use marketplace flow'
+        required: true
+        default: 'marketplace'
+        type: choice
+        options:
+          - marketplace
+          - github
+      ballerina_extension_version:
+        description: 'Specify the Ballerina extension version to use for GitHub VSIX or marketplace flow'
+        required: false
+        type: string
       icp_version:
         description: 'Specify ICP version to use'
         required: false
@@ -66,6 +78,8 @@ jobs:
     with:
       runOnAWS: ${{ github.event.inputs.runner == 'codebuild' }}
       ballerina_version: ${{ github.event.inputs.ballerina_version }}
+      ballerina_extension_source: ${{ github.event.inputs.ballerina_extension_source }}
+      ballerina_extension_version: ${{ github.event.inputs.ballerina_extension_version }}
       icp_version: ${{ github.event.inputs.icp_version }}
       integrator_version: ${{ github.event.inputs.integrator_version }}
       build_packed_installers: ${{ github.event.inputs.build_packed_installers == 'true' }}
@@ -87,6 +101,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -136,7 +151,7 @@ jobs:
           path: |
             lib/vscode/.build/builtInExtensions
             lib/vscode/.build/extensions
-          key: extensions-shared-${{ hashFiles('patches/*.diff', 'ci/build/update-product.sh', 'lib/vscode/package.json') }}
+          key: extensions-shared-${{ github.event.inputs.ballerina_extension_source }}-${{ github.event.inputs.ballerina_extension_version }}-${{ hashFiles('patches/*.diff', 'ci/build/update-product.sh', 'ci/download-vsix.sh', 'lib/vscode/package.json') }}
 
       - name: Download compilation artifact
         uses: actions/download-artifact@v4
@@ -159,6 +174,22 @@ jobs:
 
       - name: Apply patches (macOS)
         run: quilt push -a
+
+      - name: Set Ballerina extension version
+        if: ${{ github.event.inputs.ballerina_extension_version != '' }}
+        shell: bash
+        working-directory: .
+        run: |
+          echo "BALLERINA_EXTENSION_VERSION=${{ github.event.inputs.ballerina_extension_version }}" >> "$GITHUB_ENV"
+
+      - name: Download archived Ballerina VSIX
+        if: ${{ github.event.inputs.ballerina_extension_source == 'github' && github.event.inputs.ballerina_extension_version != '' }}
+        shell: bash
+        working-directory: .
+        run: |
+          chmod +x ./ci/download-vsix.sh
+          BALLERINA_VSIX_PATH=$(./ci/download-vsix.sh "wso2/ballerina-vscode" "v${{ github.event.inputs.ballerina_extension_version }}" "ballerina-${{ github.event.inputs.ballerina_extension_version }}.vsix" "$PWD")
+          echo "BALLERINA_VSIX_PATH=${BALLERINA_VSIX_PATH}" >> "$GITHUB_ENV"
 
       - name: Update product.json and branding
         working-directory: .
@@ -324,7 +355,7 @@ jobs:
           if [ "$ICP_VERSION" != "$ICP_VERSION_FILENAME" ]; then
             ICP_VERSION_FILENAME="${ICP_VERSION_FILENAME}-SNAPSHOT"
           fi
-          ICP_URL="https://github.com/wso2/integration-control-plane/releases/download/v${ICP_VERSION}/wso2-integrator-icp-${ICP_VERSION}.zip"
+          ICP_URL="https://github.com/wso2/integration-control-plane/releases/download/v${ICP_VERSION}/wso2-integration-control-plane-${ICP_VERSION}.zip"
           INTEGRATOR_VERSION="${{ github.event.inputs.integrator_version }}"
           cd ./installers/mac
           wget -O ballerina.zip "$BALLERINA_URL"
@@ -401,6 +432,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -448,7 +480,7 @@ jobs:
           path: |
             lib/vscode/.build/builtInExtensions
             lib/vscode/.build/extensions
-          key: extensions-shared-${{ hashFiles('patches/*.diff', 'ci/build/update-product.sh', 'lib/vscode/package.json') }}
+          key: extensions-shared-${{ github.event.inputs.ballerina_extension_source }}-${{ github.event.inputs.ballerina_extension_version }}-${{ hashFiles('patches/*.diff', 'ci/build/update-product.sh', 'ci/download-vsix.sh', 'lib/vscode/package.json') }}
 
       - name: Download compilation artifact
         uses: actions/download-artifact@v4
@@ -486,6 +518,22 @@ jobs:
             git apply --reject --whitespace=fix "patches/$patch" || \
             (echo "Warning: Failed to apply patch $patch" && exit 1)
           done < patches/series
+
+      - name: Set Ballerina extension version
+        if: ${{ github.event.inputs.ballerina_extension_version != '' }}
+        shell: bash
+        working-directory: .
+        run: |
+          echo "BALLERINA_EXTENSION_VERSION=${{ github.event.inputs.ballerina_extension_version }}" >> "$GITHUB_ENV"
+
+      - name: Download archived Ballerina VSIX
+        if: ${{ github.event.inputs.ballerina_extension_source == 'github' && github.event.inputs.ballerina_extension_version != '' }}
+        shell: bash
+        working-directory: .
+        run: |
+          chmod +x ./ci/download-vsix.sh
+          BALLERINA_VSIX_PATH=$(./ci/download-vsix.sh "wso2/ballerina-vscode" "v${{ github.event.inputs.ballerina_extension_version }}" "ballerina-${{ github.event.inputs.ballerina_extension_version }}.vsix" "$PWD")
+          echo "BALLERINA_VSIX_PATH=${BALLERINA_VSIX_PATH}" >> "$GITHUB_ENV"
 
       - name: Update product.json and branding
         shell: bash
@@ -641,7 +689,7 @@ jobs:
           if ($ICP_VERSION -ne $ICP_VERSION_FILENAME) {
             $ICP_VERSION_FILENAME = "${ICP_VERSION_FILENAME}-SNAPSHOT"
           }
-          $ICP_URL = "https://github.com/wso2/integration-control-plane/releases/download/v${ICP_VERSION}/wso2-integrator-icp-${ICP_VERSION}.zip"
+          $ICP_URL = "https://github.com/wso2/integration-control-plane/releases/download/v${ICP_VERSION}/wso2-integration-control-plane-${ICP_VERSION}.zip"
           $INTEGRATOR_VERSION = "${{ github.event.inputs.integrator_version }}"
           cd .\installers\windows
           Invoke-WebRequest -Uri $BALLERINA_URL -OutFile "ballerina.zip"
