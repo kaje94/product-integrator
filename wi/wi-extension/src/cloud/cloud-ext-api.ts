@@ -54,14 +54,19 @@ export class WICloudExtensionAPI implements IWso2PlatformExtensionAPI {
 	public getProjects = (orgId: string) => ext.clients.rpcClient.getProjects(orgId);
 	public updateProject = (params: Parameters<IWso2PlatformExtensionAPI["updateProject"]>[0]) =>
 		ext.clients.rpcClient.updateProject(params);
+	public createProject = (params: Parameters<IWso2PlatformExtensionAPI["createProject"]>[0]) =>
+		ext.clients.rpcClient.createProject(params);
+	public getProjectEnvs = (params: Parameters<IWso2PlatformExtensionAPI["getProjectEnvs"]>[0]) =>
+		ext.clients.rpcClient.getEnvs(params);
 
-	// Context
+	// Extension states
 	public getDirectoryComponents = (fsPath: string): ComponentKind[] =>
 		this.getComponentsOfDir(fsPath, contextStore.getState().state?.components);
 	public getSelectedContext = (): ContextItemEnriched | null =>
 		contextStore.getState().state?.selected || null;
-	public getContextStateStore = () => contextStore.getState().state;
 	public getWebviewStateStore = () => webviewStateStore.getState().state;
+	public getContextStateStore = () => contextStore.getState().state;
+	public refreshState = () => contextStore.getState().refreshState();
 
 	// Git
 	public localRepoHasChanges = (fsPath: string): Promise<boolean> =>
@@ -113,16 +118,14 @@ export class WICloudExtensionAPI implements IWso2PlatformExtensionAPI {
 	public resolveConnectionSecrets = (params: Parameters<IWso2PlatformExtensionAPI["resolveConnectionSecrets"]>[0]) =>
 		ext.clients.rpcClient.resolveConnectionSecrets(params);
 
-	// Environments & console
+	// Configs
 	public getDevantConsoleUrl = async (): Promise<string> => ext.config?.devantConsoleUrl;
-	public getProjectEnvs = (params: Parameters<IWso2PlatformExtensionAPI["getProjectEnvs"]>[0]) =>
-		ext.clients.rpcClient.getEnvs(params);
+
+	// Other Cloud APIs
 	public getComponentList = (params: Parameters<IWso2PlatformExtensionAPI["getComponentList"]>[0]) =>
 		ext.clients.rpcClient.getComponentList(params);
-	public getProjects = (orgId: string) =>
-		ext.clients.rpcClient.getProjects(orgId);
-	public createProject = (params: Parameters<IWso2PlatformExtensionAPI["createProject"]>[0]) =>
-		ext.clients.rpcClient.createProject(params);
+
+	// Workspace association
 	public updateContextFile = async (params: Parameters<IWso2PlatformExtensionAPI["updateContextFile"]>[0]): Promise<void> => {
 		const userInfo = ext.authProvider?.getState().state.userInfo;
 		const org = userInfo?.organizations?.find((o) => o.handle === params.orgHandle);
@@ -136,7 +139,6 @@ export class WICloudExtensionAPI implements IWso2PlatformExtensionAPI {
 		}
 		updateContextFileUtil(gitRoot, userInfo, params.selectedProject, org, projectList);
 	};
-	public refreshState = () => contextStore.getState().refreshState();
 
 	// Proxy
 	public startProxyServer = (params: Parameters<IWso2PlatformExtensionAPI["startProxyServer"]>[0]) =>
