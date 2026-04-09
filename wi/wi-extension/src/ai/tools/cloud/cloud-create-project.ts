@@ -22,42 +22,41 @@ import { contextStore } from "../../../cloud/stores/context-store";
 import { dataCacheStore } from "../../../cloud/stores/data-cache-store";
 import { updateContextFile as updateContextFileUtil } from "../../../cloud/cmds/create-directory-context-cmd";
 import { getGitRoot } from "../../../cloud/git/util";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_CREATE_PROJECT_TOOL = "DevantCreateProjectTool";
-
-export interface DevantCreateProjectInput {
+export interface CloudCreateProjectInput {
     orgId: string;
     orgHandler: string;
     projectName: string;
 }
 
-const DevantCreateProjectSchema = jsonSchema<DevantCreateProjectInput>({
+const CloudCreateProjectSchema = jsonSchema<CloudCreateProjectInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "The numeric ID of the organization to create the project in. Obtain from DevantListOrgsTool.",
+            description: `The numeric ID of the organization to create the project in. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         orgHandler: {
             type: "string",
-            description: "The handle (slug) of the organization. Obtain from DevantListOrgsTool.",
+            description: `The handle (slug) of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         projectName: {
             type: "string",
-            description: "The name for the new Devant project.",
+            description: "The name for the new WSO2 Cloud project.",
         },
     },
     required: ["orgId", "orgHandler", "projectName"],
 });
 
-export async function devantCreateProject(
+export async function cloudCreateProject(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantCreateProjectInput,
+    input: CloudCreateProjectInput,
 ): Promise<Project> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_CREATE_PROJECT_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.CREATE_PROJECT,
         toolInput: input,
         toolCallId,
     });
@@ -71,7 +70,7 @@ export async function devantCreateProject(
         region,
     });
 
-    console.log(`[${DEVANT_CREATE_PROJECT_TOOL}] Created project: ${project.name} (${project.id})`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_PROJECT}] Created project: ${project.name} (${project.id})`);
 
     const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (workspacePath) {
@@ -84,17 +83,17 @@ export async function devantCreateProject(
                 if (gitRoot) {
                     updateContextFileUtil(gitRoot, userInfo, project, org, projectList);
                     await contextStore.getState().refreshState();
-                    console.log(`[${DEVANT_CREATE_PROJECT_TOOL}] Workspace associated with project and state refreshed`);
+                    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_PROJECT}] Workspace associated with project and state refreshed`);
                 }
             }
         } catch (err) {
-            console.error(`[${DEVANT_CREATE_PROJECT_TOOL}] Failed to update context file or refresh state: ${err}`);
+            console.error(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_PROJECT}] Failed to update context file or refresh state: ${err}`);
         }
     }
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_CREATE_PROJECT_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.CREATE_PROJECT,
         toolOutput: project,
         toolCallId,
     });
@@ -102,22 +101,22 @@ export async function devantCreateProject(
     return project;
 }
 
-export function createDevantCreateProjectTool(eventHandler: DevantToolEventHandler) {
+export function createCloudCreateProjectTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Creates a new project in the Devant platform under a specified organization.
+        description: `Creates a new project in the WSO2 Cloud platform under a specified organization.
 
 **Purpose:**
-Creates a new Devant project that can then be used to group related components (services, integrations, tasks).
+Creates a new WSO2 Cloud project that can then be used to group related components (services, integrations, tasks).
 After creation, the current workspace is automatically associated with the new project.
 
 **When to use this tool:**
-- When the user explicitly asks to create a new Devant project
+- When the user explicitly asks to create a new WSO2 Cloud project
 
 **How to obtain the required inputs — follow these steps in order:**
-1. Call DevantGetWorkspaceContextTool first.
+1. Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} first.
 2. For orgId and orgHandler:
    - If selectedOrg is non-null, use selectedOrg.id and selectedOrg.handle — do not ask the user
-   - If selectedOrg is null, call DevantListOrgsTool, present the list, and use the chosen org's id and handle
+   - If selectedOrg is null, call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}, present the list, and use the chosen org's id and handle
 3. Ask the user for the project name if not already provided.
 
 **Response Format:**
@@ -131,14 +130,14 @@ After creation, the current workspace is automatically associated with the new p
 
 **Example:**
 User: "Create a new project called Payment Service"
-→ DevantGetWorkspaceContextTool → selectedOrg is non-null
-→ DevantCreateProjectTool with { orgId: selectedOrg.id, orgHandler: selectedOrg.handle, projectName: "Payment Service" }
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} → selectedOrg is non-null
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_PROJECT} with { orgId: selectedOrg.id, orgHandler: selectedOrg.handle, projectName: "Payment Service" }
 `,
-        inputSchema: DevantCreateProjectSchema,
-        execute: async (input: DevantCreateProjectInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudCreateProjectSchema,
+        execute: async (input: CloudCreateProjectInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_CREATE_PROJECT_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantCreateProject(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_PROJECT}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudCreateProject(eventHandler, toolCallId, input);
         },
     });
 }

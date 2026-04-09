@@ -16,31 +16,32 @@
 
 import { tool, jsonSchema } from "ai";
 import { DevantToolEventHandler, MarketplaceListResp } from "@wso2/wso2-platform-core";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 import { ext } from "../../../extensionVariables";
 
-export const DEVANT_LIST_MARKETPLACE_SERVICES_TOOL = "DevantListMarketplaceServicesTool";
 
-export interface DevantListMarketplaceServicesInput {
+
+export interface CloudListMarketplaceServicesInput {
     orgId: string;
     projectId?: string;
     query?: string;
     isThirdParty?: boolean;
 }
 
-const DevantListMarketplaceServicesSchema = jsonSchema<DevantListMarketplaceServicesInput>({
+const CloudListMarketplaceServicesSchema = jsonSchema<CloudListMarketplaceServicesInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "Numeric ID of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.id) or DevantListOrgsTool.",
+            description: `Numeric ID of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         projectId: {
             type: "string",
-            description: "Numeric ID of the project. Obtain from DevantGetWorkspaceContextTool (selectedProject.id) or DevantListProjectsTool.",
+            description: `Numeric ID of the project. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedProject.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS}.`,
         },
         query: {
             type: "string",
-            description: "Optionally filter services by name, description, summary, or IDL content.",
+            description: `Optionally filter services by name, description, summary, or IDL content.`,
         },
         isThirdParty: {
             type: "boolean",
@@ -50,14 +51,14 @@ const DevantListMarketplaceServicesSchema = jsonSchema<DevantListMarketplaceServ
     required: ["orgId", "projectId"],
 });
 
-export async function devantListMarketplaceServices(
+export async function cloudListMarketplaceServices(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantListMarketplaceServicesInput,
+    input: CloudListMarketplaceServicesInput,
 ): Promise<MarketplaceListResp> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_LIST_MARKETPLACE_SERVICES_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.LIST_MARKETPLACE_SERVICES,
         toolInput: input,
         toolCallId,
     });
@@ -80,11 +81,11 @@ export async function devantListMarketplaceServices(
         throw new Error(`Failed to retrieve marketplace services: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    console.log(`[${DEVANT_LIST_MARKETPLACE_SERVICES_TOOL}] Returning ${result?.data?.length ?? 0} marketplace services"`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.LIST_MARKETPLACE_SERVICES}] Returning ${result?.data?.length ?? 0} marketplace services"`);
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_LIST_MARKETPLACE_SERVICES_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.LIST_MARKETPLACE_SERVICES,
         toolOutput: result,
         toolCallId,
     });
@@ -92,9 +93,9 @@ export async function devantListMarketplaceServices(
     return result;
 }
 
-export function createDevantListMarketplaceServicesTool(eventHandler: DevantToolEventHandler) {
+export function createCloudListMarketplaceServicesTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Retrieves marketplace services available to an organization in Devant.
+        description: `Retrieves marketplace services available to an organization in WSO2 Cloud.
 
 **Purpose:**
 Returns a paginated list of marketplace services (REST, GraphQL, GRPC, SOAP, ASYNC_API) and database resources that are accessible to the organization. Services can be filtered by search query, network visibility, or third-party status.
@@ -105,7 +106,7 @@ Returns a paginated list of marketplace services (REST, GraphQL, GRPC, SOAP, ASY
 - When the user wants to browse or search for specific service types
 
 **Prerequisites:**
-Call DevantGetWorkspaceContextTool first to obtain \`orgId\` (selectedOrg.id) and \`projectId\` (selectedProject.id).
+Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} first to obtain \`orgId\` (selectedOrg.id) and \`projectId\` (selectedProject.id).
 
 **Filtering:**
 - Use \`query\` to search by name, description, summary, or IDL
@@ -127,11 +128,11 @@ Returns an object containing:
   - \`visibility\`: Visibility levels (PUBLIC, ORGANIZATION, PROJECT)
   - \`connectionSchemas\`: Available connection schema definitions
 `,
-        inputSchema: DevantListMarketplaceServicesSchema,
-        execute: async (input: DevantListMarketplaceServicesInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudListMarketplaceServicesSchema,
+        execute: async (input: CloudListMarketplaceServicesInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_LIST_MARKETPLACE_SERVICES_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantListMarketplaceServices(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.LIST_MARKETPLACE_SERVICES}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudListMarketplaceServices(eventHandler, toolCallId, input);
         },
     });
 }

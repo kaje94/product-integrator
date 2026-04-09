@@ -17,48 +17,47 @@
 import { tool, jsonSchema } from "ai";
 import { CredentialItem, DevantToolEventHandler } from "@wso2/wso2-platform-core";
 import { ext } from "../../../extensionVariables";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_GET_CREDENTIALS_TOOL = "DevantGetCredentialsTool";
-
-export interface DevantGetCredentialsInput {
+export interface CloudGetCredentialsInput {
     orgId: string;
     orgHandle: string;
 }
 
-const DevantGetCredentialsSchema = jsonSchema<DevantGetCredentialsInput>({
+const CloudGetCredentialsSchema = jsonSchema<CloudGetCredentialsInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "Numeric ID of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.id) or DevantListOrgsTool.",
+            description: `Numeric ID of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         orgHandle: {
             type: "string",
-            description: "Handle (slug) of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.handle) or DevantListOrgsTool.",
+            description: `Handle (slug) of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.handle) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
     },
     required: ["orgId", "orgHandle"],
 });
 
-export async function devantGetCredentials(
+export async function cloudGetCredentials(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantGetCredentialsInput,
+    input: CloudGetCredentialsInput,
 ): Promise<CredentialItem[]> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_GET_CREDENTIALS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS,
         toolInput: input,
         toolCallId,
     });
 
     const userInfo = ext.authProvider?.getState().state?.userInfo;
     if (!userInfo) {
-        throw new Error("User not authenticated. Please sign in to Devant first.");
+        throw new Error("User not authenticated. Please sign in to WSO2 Cloud first.");
     }
     const org = userInfo.organizations?.find((o) => o.handle === input.orgHandle);
     if (!org) {
-        throw new Error(`Organization "${input.orgHandle}" not found. Call DevantListOrgsTool to verify the org handle.`);
+        throw new Error(`Organization "${input.orgHandle}" not found. Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} to verify the org handle.`);
     }
 
     const credentials = await ext.clients.rpcClient.getCredentials({
@@ -66,11 +65,11 @@ export async function devantGetCredentials(
         orgUuid: org.uuid,
     });
 
-    console.log(`[${DEVANT_GET_CREDENTIALS_TOOL}] Returning ${credentials?.length ?? 0} credentials for org "${input.orgHandle}"`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS}] Returning ${credentials?.length ?? 0} credentials for org "${input.orgHandle}"`);
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_GET_CREDENTIALS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS,
         toolOutput: credentials,
         toolCallId,
     });
@@ -78,12 +77,12 @@ export async function devantGetCredentials(
     return credentials ?? [];
 }
 
-export function createDevantGetCredentialsTool(eventHandler: DevantToolEventHandler) {
+export function createCloudGetCredentialsTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Retrieves the list of git credentials configured for an organization in Devant.
+        description: `Retrieves the list of git credentials configured for an organization in WSO2 Cloud.
 
 **Purpose:**
-Returns all repository credentials (e.g. for Bitbucket, GitLab, or private GitHub repos) configured in the organization's Devant settings. Use this to find an existing credential reference before creating an integration with a private repository.
+Returns all repository credentials (e.g. for Bitbucket, GitLab, or private GitHub repos) configured in the organization's WSO2 Cloud settings. Use this to find an existing credential reference before creating an integration with a private repository.
 
 **When to use this tool:**
 - When the user asks to see their configured credentials
@@ -91,7 +90,7 @@ Returns all repository credentials (e.g. for Bitbucket, GitLab, or private GitHu
 - When you need to resolve a credential name to its ID for use in other operations
 
 **Prerequisites:**
-Call DevantGetWorkspaceContextTool first to obtain \`orgId\` (selectedOrg.id) and \`orgHandle\` (selectedOrg.handle).
+Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} first to obtain \`orgId\` (selectedOrg.id) and \`orgHandle\` (selectedOrg.handle).
 
 **Response Format:**
 Returns a list of credential objects, each containing:
@@ -101,11 +100,11 @@ Returns a list of credential objects, each containing:
 - \`serverUrl\`: The git server URL this credential applies to
 - \`createdAt\`: When the credential was created
 `,
-        inputSchema: DevantGetCredentialsSchema,
-        execute: async (input: DevantGetCredentialsInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudGetCredentialsSchema,
+        execute: async (input: CloudGetCredentialsInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_GET_CREDENTIALS_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantGetCredentials(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudGetCredentials(eventHandler, toolCallId, input);
         },
     });
 }

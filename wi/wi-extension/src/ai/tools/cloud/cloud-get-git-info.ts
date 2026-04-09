@@ -19,10 +19,9 @@ import { tool, jsonSchema } from "ai";
 import { DevantToolEventHandler } from "@wso2/wso2-platform-core";
 import { ext } from "../../../extensionVariables";
 import { getGitRoot, getGitRemotes, getGitHead } from "../../../cloud/git/util";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_GET_GIT_INFO_TOOL = "DevantGetGitInfoTool";
-
-export interface DevantGetGitInfoInput {
+export interface CloudGetGitInfoInput {
     directoryPath?: string;
 }
 
@@ -32,7 +31,7 @@ export interface GitRemoteInfo {
     pushUrl?: string;
 }
 
-export interface DevantGetGitInfoResult {
+export interface CloudGetGitInfoResult {
     isGitInitialized: boolean;
     workspaceFolderPath?: string;
     rootPath?: string;
@@ -41,7 +40,7 @@ export interface DevantGetGitInfoResult {
     commit?: string;
 }
 
-const DevantGetGitInfoSchema = jsonSchema<DevantGetGitInfoInput>({
+const CloudGetGitInfoSchema = jsonSchema<CloudGetGitInfoInput>({
     type: "object",
     properties: {
         directoryPath: {
@@ -52,14 +51,14 @@ const DevantGetGitInfoSchema = jsonSchema<DevantGetGitInfoInput>({
     required: [],
 });
 
-export async function devantGetGitInfo(
+export async function cloudGetGitInfo(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantGetGitInfoInput,
-): Promise<DevantGetGitInfoResult> {
+    input: CloudGetGitInfoInput,
+): Promise<CloudGetGitInfoResult> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_GET_GIT_INFO_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO,
         toolInput: input,
         toolCallId,
     });
@@ -67,10 +66,10 @@ export async function devantGetGitInfo(
     const directoryPath = input.directoryPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
     if (!directoryPath) {
-        const result: DevantGetGitInfoResult = { isGitInitialized: false, remotes: [] };
+        const result: CloudGetGitInfoResult = { isGitInitialized: false, remotes: [] };
         eventHandler({
             type: "tool_result",
-            toolName: DEVANT_GET_GIT_INFO_TOOL,
+            toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO,
             toolOutput: result,
             toolCallId,
         });
@@ -81,10 +80,10 @@ export async function devantGetGitInfo(
     try {
         rootPath = await getGitRoot(ext.context, directoryPath);
     } catch {
-        const result: DevantGetGitInfoResult = { isGitInitialized: false, remotes: [] };
+        const result: CloudGetGitInfoResult = { isGitInitialized: false, remotes: [] };
         eventHandler({
             type: "tool_result",
-            toolName: DEVANT_GET_GIT_INFO_TOOL,
+            toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO,
             toolOutput: result,
             toolCallId,
         });
@@ -92,10 +91,10 @@ export async function devantGetGitInfo(
     }
 
     if (!rootPath) {
-        const result: DevantGetGitInfoResult = { isGitInitialized: false, remotes: [] };
+        const result: CloudGetGitInfoResult = { isGitInitialized: false, remotes: [] };
         eventHandler({
             type: "tool_result",
-            toolName: DEVANT_GET_GIT_INFO_TOOL,
+            toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO,
             toolOutput: result,
             toolCallId,
         });
@@ -107,7 +106,7 @@ export async function devantGetGitInfo(
         getGitHead(ext.context, directoryPath),
     ]);
 
-    const result: DevantGetGitInfoResult = {
+    const result: CloudGetGitInfoResult = {
         isGitInitialized: true,
         workspaceFolderPath: directoryPath,
         rootPath,
@@ -117,12 +116,12 @@ export async function devantGetGitInfo(
     };
 
     console.log(
-        `[${DEVANT_GET_GIT_INFO_TOOL}] workspaceFolderPath=${directoryPath}, rootPath=${rootPath}, branch=${result.branch ?? "detached"}, remotes=${result.remotes.map((r) => r.name).join(", ") || "none"}`
+        `[${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO}] workspaceFolderPath=${directoryPath}, rootPath=${rootPath}, branch=${result.branch ?? "detached"}, remotes=${result.remotes.map((r) => r.name).join(", ") || "none"}`
     );
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_GET_GIT_INFO_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO,
         toolOutput: result,
         toolCallId,
     });
@@ -130,7 +129,7 @@ export async function devantGetGitInfo(
     return result;
 }
 
-export function createDevantGetGitInfoTool(eventHandler: DevantToolEventHandler) {
+export function createCloudGetGitInfoTool(eventHandler: DevantToolEventHandler) {
     return tool({
         description: `Returns git repository information for the current workspace directory.
 
@@ -138,7 +137,7 @@ export function createDevantGetGitInfoTool(eventHandler: DevantToolEventHandler)
 Detects whether git has been initialized in the workspace and, if so, returns the repository root path, configured remotes, and the currently checked-out branch (or HEAD commit when in detached HEAD state).
 
 **When to use this tool:**
-Call this tool before DevantCreateIntegrationTool to resolve the \`repoUrl\` and \`branch\` inputs without reading raw git files manually. It provides a single, reliable source of truth for:
+Call this tool before ${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION} to resolve the \`repoUrl\` and \`branch\` inputs without reading raw git files manually. It provides a single, reliable source of truth for:
 - Whether the workspace is a git repository (\`isGitInitialized\`)
 - The git root directory (\`rootPath\`)
 - All configured remotes and their URLs (\`remotes\`)
@@ -147,25 +146,25 @@ Call this tool before DevantCreateIntegrationTool to resolve the \`repoUrl\` and
 **Response Format:**
 Returns an object with:
 - \`isGitInitialized\` (boolean): true when the directory is inside a git repository
-- \`workspaceFolderPath\` (string | undefined): the resolved absolute path of the workspace folder that was inspected — use this value as \`directoryPath\` when calling DevantListIntegrationsTool
+- \`workspaceFolderPath\` (string | undefined): the resolved absolute path of the workspace folder that was inspected — use this value as \`directoryPath\` when calling ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS}
 - \`rootPath\` (string | undefined): absolute path to the repository root; undefined if not a git repo
 - \`remotes\` (array): list of configured remotes, each with \`name\`, \`fetchUrl\`, and \`pushUrl\`
 - \`branch\` (string | undefined): name of the currently checked-out branch; undefined when in detached HEAD state
 - \`commit\` (string | undefined): SHA of the current HEAD commit
 
 **How to use the result:**
-- \`isGitInitialized\` is false → the workspace is not a git repository; inform the user and stop — do NOT proceed with DevantCreateIntegrationTool
+- \`isGitInitialized\` is false → the workspace is not a git repository; inform the user and stop — do NOT proceed with ${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION}
 - \`remotes\` is empty → no remotes configured; the repository exists locally but has no remote origin — inform the user that a remote must be added and pushed before deploying
-- \`remotes\` has entries → use the \`fetchUrl\` of the \`origin\` remote (or the first remote if \`origin\` is absent) as the \`repoUrl\` for DevantCreateIntegrationTool. Strip credentials and the \`.git\` suffix from the URL.
-- \`branch\` is defined → use it as the \`branch\` for DevantCreateIntegrationTool (confirm with the user if they want a different branch)
+- \`remotes\` has entries → use the \`fetchUrl\` of the \`origin\` remote (or the first remote if \`origin\` is absent) as the \`repoUrl\` for ${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION}. Strip credentials and the \`.git\` suffix from the URL.
+- \`branch\` is defined → use it as the \`branch\` for ${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION} (confirm with the user if they want a different branch)
 - \`branch\` is undefined (detached HEAD) → ask the user which branch to use
-- \`workspaceFolderPath\` → pass this directly as \`directoryPath\` to DevantListIntegrationsTool to scope results to the current workspace; do NOT construct or guess this path from other sources
+- \`workspaceFolderPath\` → pass this directly as \`directoryPath\` to ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} to scope results to the current workspace; do NOT construct or guess this path from other sources
 `,
-        inputSchema: DevantGetGitInfoSchema,
-        execute: async (input: DevantGetGitInfoInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudGetGitInfoSchema,
+        execute: async (input: CloudGetGitInfoInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_GET_GIT_INFO_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantGetGitInfo(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudGetGitInfo(eventHandler, toolCallId, input);
         },
     });
 }

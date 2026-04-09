@@ -17,53 +17,52 @@
 import { tool, jsonSchema } from "ai";
 import { DevantToolEventHandler, Environment } from "@wso2/wso2-platform-core";
 import { ext } from "../../../extensionVariables";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_GET_PROJECT_ENVS_TOOL = "DevantGetProjectEnvsTool";
-
-export interface DevantGetProjectEnvsInput {
+export interface CloudGetProjectEnvsInput {
     orgId: string;
     orgHandle: string;
     projectId: string;
 }
 
-const DevantGetProjectEnvsSchema = jsonSchema<DevantGetProjectEnvsInput>({
+const CloudGetProjectEnvsSchema = jsonSchema<CloudGetProjectEnvsInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "Numeric ID of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.id) or DevantListOrgsTool.",
+            description: `Numeric ID of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         orgHandle: {
             type: "string",
-            description: "Handle (slug) of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.handle) or DevantListOrgsTool.",
+            description: `Handle (slug) of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.handle) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         projectId: {
             type: "string",
-            description: "Unique ID of the project. Obtain from DevantGetWorkspaceContextTool (selectedProject.id) or DevantListProjectsTool.",
+            description: `Unique ID of the project. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedProject.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS}.`,
         },
     },
     required: ["orgId", "orgHandle", "projectId"],
 });
 
-export async function devantGetProjectEnvs(
+export async function cloudGetProjectEnvs(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantGetProjectEnvsInput,
+    input: CloudGetProjectEnvsInput,
 ): Promise<Environment[]> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_GET_PROJECT_ENVS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_PROJECT_ENVS,
         toolInput: input,
         toolCallId,
     });
 
     const userInfo = ext.authProvider?.getState().state?.userInfo;
     if (!userInfo) {
-        throw new Error("User not authenticated. Please sign in to Devant first.");
+        throw new Error("User not authenticated. Please sign in to WSO2 Cloud first.");
     }
     const org = userInfo.organizations?.find((o) => o.handle === input.orgHandle);
     if (!org) {
-        throw new Error(`Organization "${input.orgHandle}" not found. Call DevantListOrgsTool to verify the org handle.`);
+        throw new Error(`Organization "${input.orgHandle}" not found. Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} to verify the org handle.`);
     }
 
     const envs = await ext.clients.rpcClient.getEnvs({
@@ -72,11 +71,11 @@ export async function devantGetProjectEnvs(
         projectId: input.projectId,
     });
 
-    console.log(`[${DEVANT_GET_PROJECT_ENVS_TOOL}] Returning ${envs.length} environments for project "${input.projectId}"`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.GET_PROJECT_ENVS}] Returning ${envs.length} environments for project "${input.projectId}"`);
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_GET_PROJECT_ENVS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_PROJECT_ENVS,
         toolOutput: envs,
         toolCallId,
     });
@@ -84,12 +83,12 @@ export async function devantGetProjectEnvs(
     return envs;
 }
 
-export function createDevantGetProjectEnvsTool(eventHandler: DevantToolEventHandler) {
+export function createCloudGetProjectEnvsTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Retrieves the list of environments configured for a Devant project.
+        description: `Retrieves the list of environments configured for a WSO2 Cloud project.
 
 **Purpose:**
-Returns all deployment environments (e.g., Development, Staging, Production) available for a Devant project.
+Returns all deployment environments (e.g., Development, Staging, Production) available for a WSO2 Cloud project.
 
 **When to use this tool:**
 - When the user asks about the environments in their project
@@ -97,8 +96,8 @@ Returns all deployment environments (e.g., Development, Staging, Production) ava
 - When you need to resolve an environment name to its ID
 
 **Prerequisites:**
-Call DevantGetWorkspaceContextTool first to obtain \`orgId\` (selectedOrg.id), \`orgHandle\` (selectedOrg.handle), and \`projectId\` (selectedProject.id).
-If \`isAssociated\` is false, call DevantAssociateWorkspaceTool to link the workspace to a project before using this tool.
+Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} first to obtain \`orgId\` (selectedOrg.id), \`orgHandle\` (selectedOrg.handle), and \`projectId\` (selectedProject.id).
+If \`isAssociated\` is false, call ${WI_CLOUD_AGENT_TOOL_NAMES.ASSOCIATE_WORKSPACE} to link the workspace to a project before using this tool.
 
 **Response Format:**
 Returns a list of environment objects, each containing:
@@ -108,11 +107,11 @@ Returns a list of environment objects, each containing:
 - critical: Whether this is a critical (production-grade) environment
 - choreoEnv: Internal environment identifier used by the platform
 `,
-        inputSchema: DevantGetProjectEnvsSchema,
-        execute: async (input: DevantGetProjectEnvsInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudGetProjectEnvsSchema,
+        execute: async (input: CloudGetProjectEnvsInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_GET_PROJECT_ENVS_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantGetProjectEnvs(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.GET_PROJECT_ENVS}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudGetProjectEnvs(eventHandler, toolCallId, input);
         },
     });
 }

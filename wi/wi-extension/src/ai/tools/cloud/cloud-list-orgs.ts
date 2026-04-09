@@ -18,40 +18,39 @@ import { tool, jsonSchema } from "ai";
 import { DevantToolEventHandler, Organization } from "@wso2/wso2-platform-core";
 import { ext } from "../../../extensionVariables";
 import { contextStore } from "../../../cloud/stores/context-store";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_LIST_ORGS_TOOL = "DevantListOrgsTool";
-
-export interface DevantListOrgsResult {
+export interface CloudListOrgsResult {
     organizations: Organization[];
     selectedOrg: Organization | null;
 }
 
-const DevantListOrgsSchema = jsonSchema<Record<string, never>>({
+const CloudListOrgsSchema = jsonSchema<Record<string, never>>({
     type: "object",
     properties: {},
     required: [],
 });
 
-export async function devantListOrgs(
+export async function cloudListOrgs(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-): Promise<DevantListOrgsResult> {
+): Promise<CloudListOrgsResult> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_LIST_ORGS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS,
         toolInput: {},
         toolCallId,
     });
 
     const organizations = ext.authProvider?.getState().state?.userInfo?.organizations ?? [];
     const selectedOrg = contextStore.getState().state?.selected?.org ?? null;
-    const result: DevantListOrgsResult = { organizations, selectedOrg };
+    const result: CloudListOrgsResult = { organizations, selectedOrg };
 
-    console.log(`[${DEVANT_LIST_ORGS_TOOL}] Returning ${organizations.length} organizations, selected: ${selectedOrg?.name ?? "none"}`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}] Returning ${organizations.length} organizations, selected: ${selectedOrg?.name ?? "none"}`);
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_LIST_ORGS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS,
         toolOutput: result,
         toolCallId,
     });
@@ -59,16 +58,16 @@ export async function devantListOrgs(
     return result;
 }
 
-export function createDevantListOrgsTool(eventHandler: DevantToolEventHandler) {
+export function createCloudListOrgsTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Lists all organizations available to the current user in the Devant platform.
+        description: `Lists all organizations available to the current user in the WSO2 Cloud platform.
 
 **Purpose:**
 Retrieves the full list of organizations the user belongs to.
 
 **When to use this tool:**
-Use this as a FALLBACK only when DevantGetWorkspaceContextTool returns selectedOrg as null.
-Do NOT call this tool if DevantGetWorkspaceContextTool already returned a non-null selectedOrg.
+Use this as a FALLBACK only when ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} returns selectedOrg as null.
+Do NOT call this tool if ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} already returned a non-null selectedOrg.
 
 **Response Format:**
 Returns an object with:
@@ -80,16 +79,16 @@ Returns an object with:
 - If selectedOrg is null → present the organizations list to the user and ask them to choose one
 
 **Example:**
-DevantGetWorkspaceContextTool returns selectedOrg=null
-→ Call DevantListOrgsTool to get all organizations
+${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} returns selectedOrg=null
+→ Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} to get all organizations
 → Present list to user, ask them to pick one
 → Use chosen org's id and handle for subsequent calls
 `,
-        inputSchema: DevantListOrgsSchema,
+        inputSchema: CloudListOrgsSchema,
         execute: async (_input: Record<string, never>, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_LIST_ORGS_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantListOrgs(eventHandler, toolCallId);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudListOrgs(eventHandler, toolCallId);
         },
     });
 }

@@ -24,10 +24,9 @@ import { dataCacheStore } from "../../../cloud/stores/data-cache-store";
 import { updateContextFile as updateContextFileUtil } from "../../../cloud/cmds/create-directory-context-cmd";
 import { getGitRoot } from "../../../cloud/git/util";
 import { StateMachine, ProjectType } from "../../../stateMachine";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_CREATE_INTEGRATION_TOOL = "DevantCreateIntegrationTool";
-
-export interface DevantCreateIntegrationInput {
+export interface CloudCreateIntegrationInput {
     orgId: string;
     orgHandle: string;
     projectHandler: string;
@@ -39,27 +38,27 @@ export interface DevantCreateIntegrationInput {
     credentialId?: string;
 }
 
-export interface DevantCreateIntegrationResult {
+export interface CloudCreateIntegrationResult {
     requiresAuth: boolean;
     message?: string;
     authorizationUrl?: string;
     component?: ComponentKind;
 }
 
-const DevantCreateIntegrationSchema = jsonSchema<DevantCreateIntegrationInput>({
+const CloudCreateIntegrationSchema = jsonSchema<CloudCreateIntegrationInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "Numeric ID of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.id) or DevantListOrgsTool.",
+            description: `Numeric ID of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         orgHandle: {
             type: "string",
-            description: "Handle (slug) of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.handle) or DevantListOrgsTool.",
+            description: `Handle (slug) of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.handle) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         projectHandler: {
             type: "string",
-            description: "Handler (slug) of the project. Obtain from DevantGetWorkspaceContextTool (selectedProject.handler) or DevantListProjectsTool.",
+            description: `Handler (slug) of the project. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedProject.handler) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS}.`,
         },
         componentName: {
             type: "string",
@@ -68,15 +67,15 @@ const DevantCreateIntegrationSchema = jsonSchema<DevantCreateIntegrationInput>({
         integrationType: {
             type: "string",
             enum: ["integration-as-api", "automation", "event-integration", "file-integration", "ai-agent"],
-            description: "The Devant integration type, automatically determined by analyzing the workspace source code. Do NOT ask the user — derive it using the detection rules described in the tool description.",
+            description: "The WSO2 Cloud integration type, automatically determined by analyzing the workspace source code. Do NOT ask the user — derive it using the detection rules described in the tool description.",
         },
         repoUrl: {
             type: "string",
-            description: "Full HTTPS git repository URL (e.g. https://github.com/acme/payments). Obtain from DevantGetGitInfoTool: use the fetchUrl of the 'origin' remote (or first remote), stripping credentials and the .git suffix.",
+            description: `Full HTTPS git repository URL (e.g. https://github.com/acme/payments). Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO}: use the fetchUrl of the 'origin' remote (or first remote), stripping credentials and the .git suffix.`,
         },
         branch: {
             type: "string",
-            description: "Git branch to deploy from. Obtain from DevantGetGitInfoTool (branch field). Confirm with the user if they want a different branch. Ask the user if branch is undefined (detached HEAD).",
+            description: `Git branch to deploy from. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO} (branch field). Confirm with the user if they want a different branch. Ask the user if branch is undefined (detached HEAD).`,
         },
         componentDir: {
             type: "string",
@@ -84,7 +83,7 @@ const DevantCreateIntegrationSchema = jsonSchema<DevantCreateIntegrationInput>({
         },
         credentialId: {
             type: "string",
-            description: "ID of the git credential to use for non-GitHub repos. Obtain from DevantGetCredentialsTool. Required for Bitbucket and GitLab repos.",
+            description: `ID of the git credential to use for non-GitHub repos. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS}. Required for Bitbucket and GitLab repos.`,
         },
     },
     required: ["orgId", "orgHandle", "projectHandler", "componentName", "integrationType", "repoUrl", "branch"],
@@ -103,20 +102,20 @@ async function buildGithubState(orgId: string): Promise<string> {
             origin: "vscode.choreo.ext",
             orgId,
             callbackUri: callbackUrl.toString(),
-            extensionName: "Devant",
+            extensionName: "WSO2 Cloud",
         }),
         "binary",
     ).toString("base64");
 }
 
-export async function devantCreateIntegration(
+export async function cloudCreateIntegration(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantCreateIntegrationInput,
-): Promise<DevantCreateIntegrationResult> {
+    input: CloudCreateIntegrationInput,
+): Promise<CloudCreateIntegrationResult> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_CREATE_INTEGRATION_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION,
         toolInput: input,
         toolCallId,
     });
@@ -124,16 +123,16 @@ export async function devantCreateIntegration(
     // 1. Resolve org and project from explicit inputs
     const userInfo = ext.authProvider?.getState().state?.userInfo;
     if (!userInfo) {
-        throw new Error("User not authenticated. Please sign in to Devant first.");
+        throw new Error("User not authenticated. Please sign in to WSO2 Cloud first.");
     }
     const org = userInfo.organizations?.find((o) => o.handle === input.orgHandle);
     if (!org) {
-        throw new Error(`Organization "${input.orgHandle}" not found. Call DevantListOrgsTool to verify the org handle.`);
+        throw new Error(`Organization "${input.orgHandle}" not found. Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} to verify the org handle.`);
     }
     const projects = await ext.clients.rpcClient.getProjects(input.orgId);
     const project = projects.find((p: Project) => p.handler === input.projectHandler);
     if (!project) {
-        throw new Error(`Project "${input.projectHandler}" not found in organization "${input.orgHandle}". Call DevantListProjectsTool to verify the project handler.`);
+        throw new Error(`Project "${input.projectHandler}" not found in organization "${input.orgHandle}". Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS} to verify the project handler.`);
     }
 
     const orgId = input.orgId;
@@ -141,13 +140,13 @@ export async function devantCreateIntegration(
     // 2. Detect git provider from URL
     const parsed = parseGitURL(input.repoUrl);
     if (!parsed) {
-        const result: DevantCreateIntegrationResult = {
+        const result: CloudCreateIntegrationResult = {
             requiresAuth: false,
             message: `The repository URL "${input.repoUrl}" is not a valid git URL. Please verify the URL and try again.`,
         };
         eventHandler({
             type: "tool_result",
-            toolName: DEVANT_CREATE_INTEGRATION_TOOL,
+            toolName: WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION,
             toolOutput: result,
             toolCallId,
         });
@@ -165,7 +164,7 @@ export async function devantCreateIntegration(
     // 4. Handle authorization failure
     if (!authResp.isAccessible) {
         const config = await getConfig();
-        let result: DevantCreateIntegrationResult;
+        let result: CloudCreateIntegrationResult;
 
         if (gitProvider === "github") {
             const state = await buildGithubState(orgId);
@@ -193,15 +192,15 @@ export async function devantCreateIntegration(
             result = {
                 requiresAuth: true,
                 authorizationUrl: credentialsUrl,
-                message: `Repository credentials are required. Please click the link to configure them in the Devant console, then retry creating the integration.`,
+                message: `Repository credentials are required. Please click the link to configure them in the WSO2 Cloud console, then retry creating the integration.`,
             };
         }
 
-        console.log(`[${DEVANT_CREATE_INTEGRATION_TOOL}] Auth required for repo "${input.repoUrl}"`);
+        console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION}] Auth required for repo "${input.repoUrl}"`);
 
         eventHandler({
             type: "tool_result",
-            toolName: DEVANT_CREATE_INTEGRATION_TOOL,
+            toolName: WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION,
             toolOutput: result,
             toolCallId,
         });
@@ -216,14 +215,14 @@ export async function devantCreateIntegration(
         credRef: input.credentialId ?? "",
     });
     if (!accessibleBranches.includes(input.branch)) {
-        const result: DevantCreateIntegrationResult = {
+        const result: CloudCreateIntegrationResult = {
             requiresAuth: false,
             message: `Branch "${input.branch}" was not found in the remote repository "${input.repoUrl}". Available branches: ${accessibleBranches.length ? accessibleBranches.join(", ") : "(none accessible)"}. Please push the branch to the remote or choose an existing branch and retry.`,
         };
-        console.log(`[${DEVANT_CREATE_INTEGRATION_TOOL}] Branch "${input.branch}" not accessible in "${input.repoUrl}"`);
+        console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION}] Branch "${input.branch}" not accessible in "${input.repoUrl}"`);
         eventHandler({
             type: "tool_result",
-            toolName: DEVANT_CREATE_INTEGRATION_TOOL,
+            toolName: WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION,
             toolOutput: result,
             toolCallId,
         });
@@ -264,7 +263,7 @@ export async function devantCreateIntegration(
         spaOutputDir: "",
     });
 
-    console.log(`[${DEVANT_CREATE_INTEGRATION_TOOL}] Created integration "${component.metadata.displayName}" (${component.metadata.id})`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION}] Created integration "${component.metadata.displayName}" (${component.metadata.id})`);
 
     // 6. Update context file so the workspace reflects the newly created integration
     try {
@@ -272,13 +271,13 @@ export async function devantCreateIntegration(
         updateContextFileUtil(gitRoot, userInfo, project, org, projects);
         await contextStore.getState().refreshState();
     } catch (err) {
-        console.warn(`[${DEVANT_CREATE_INTEGRATION_TOOL}] Failed to update context file after creation: ${err}`);
+        console.warn(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION}] Failed to update context file after creation: ${err}`);
     }
-    const result: DevantCreateIntegrationResult = { requiresAuth: false, component };
+    const result: CloudCreateIntegrationResult = { requiresAuth: false, component };
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_CREATE_INTEGRATION_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION,
         toolOutput: result,
         toolCallId,
     });
@@ -286,19 +285,19 @@ export async function devantCreateIntegration(
     return result;
 }
 
-export function createDevantCreateIntegrationTool(eventHandler: DevantToolEventHandler) {
+export function createCloudCreateIntegrationTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Creates a new WSO2 integration component in the currently associated Devant project.
+        description: `Creates a new WSO2 integration component in the currently associated WSO2 Cloud project.
 
 **Purpose:**
-Registers a new integration in Devant by linking a git repository directory to a project. Supports all Devant integration types: Integration as API, Automation, Event Integration, File Integration, and AI Agent.
+Registers a new integration in WSO2 Cloud by linking a git repository directory to a project. Supports all WSO2 Cloud integration types: Integration as API, Automation, Event Integration, File Integration, and AI Agent.
 
-When the user says they want to **"deploy"**, **"deploy to Devant"**, **"deploy to the cloud"**, **"create a component"**, or **"create an integration"** — they all mean the same thing: call this tool. Once an integration is created in Devant, it automatically builds and deploys from the remote repo.
+When the user says they want to **"deploy"**, **"deploy to WSO2 Cloud"**, **"deploy to the cloud"**, **"create a component"**, or **"create an integration"** — they all mean the same thing: call this tool. Once an integration is created in WSO2 Cloud, it automatically builds and deploys from the remote repo.
 
 **Prerequisites:**
-1. Call DevantGetWorkspaceContextTool first. Use \`selectedOrg.id\` as \`orgId\`, \`selectedOrg.handle\` as \`orgHandle\`, and \`selectedProject.handler\` as \`projectHandler\`. If \`isAssociated\` is false (selectedOrg or selectedProject is null), call DevantListOrgsTool and DevantListProjectsTool to let the user pick, then call DevantAssociateWorkspaceTool before proceeding.
-2. **Ensure all changes are committed and pushed to the remote repository.** Devant automatically starts a build from the remote repo immediately after the integration is created — if the source is not in the remote, the build will fail. Verify by running \`git status\` and \`git log origin/<branch>..<branch>\`. If there are unpushed commits or uncommitted changes, inform the user and wait for them to push before proceeding.
-3. Call **DevantGetGitInfoTool** (optionally passing \`directoryPath\` if the integration is not at the workspace root). Use the result to:
+1. Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} first. Use \`selectedOrg.id\` as \`orgId\`, \`selectedOrg.handle\` as \`orgHandle\`, and \`selectedProject.handler\` as \`projectHandler\`. If \`isAssociated\` is false (selectedOrg or selectedProject is null), call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} and ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS} to let the user pick, then call ${WI_CLOUD_AGENT_TOOL_NAMES.ASSOCIATE_WORKSPACE} before proceeding.
+2. **Ensure all changes are committed and pushed to the remote repository.** WSO2 Cloud automatically starts a build from the remote repo immediately after the integration is created — if the source is not in the remote, the build will fail. Verify by running \`git status\` and \`git log origin/<branch>..<branch>\`. If there are unpushed commits or uncommitted changes, inform the user and wait for them to push before proceeding.
+3. Call **${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO}** (optionally passing \`directoryPath\` if the integration is not at the workspace root). Use the result to:
    - Confirm \`isGitInitialized\` is true — if false, stop and inform the user that the workspace is not a git repository.
    - Confirm \`remotes\` is non-empty — if empty, stop and inform the user that a remote must be configured and the code pushed before deploying.
    - Use the \`fetchUrl\` of the \`origin\` remote (or the first remote if \`origin\` is absent) as \`repoUrl\`. Strip any embedded credentials and the \`.git\` suffix.
@@ -306,15 +305,15 @@ When the user says they want to **"deploy"**, **"deploy to Devant"**, **"deploy 
 4. Derive \`componentName\` from source (see rules below) — do NOT ask the user.
 5. Analyze the workspace source code to determine \`integrationType\` automatically (see detection rules below) — do NOT ask the user.
 6. For **non-GitHub repos** (Bitbucket, GitLab), resolve the credential before calling this tool:
-   - Call DevantGetCredentialsTool to list all credentials for the org.
+   - Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS} to list all credentials for the org.
    - Present the list to the user and ask them to pick the correct one for the repo.
    - Pass the selected credential's \`id\` as \`credentialId\`.
-   - For **GitLab** repos specifically: also call DevantGetCredentialDetailsTool with the selected credential to retrieve its \`serverUrl\`. Construct the full \`repoUrl\` as \`{serverUrl}/{gitOrg}/{repoName}\` (e.g. \`https://gitlab.example.com/acme/payments\`).
+   - For **GitLab** repos specifically: also call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIAL_DETAILS} with the selected credential to retrieve its \`serverUrl\`. Construct the full \`repoUrl\` as \`{serverUrl}/{gitOrg}/{repoName}\` (e.g. \`https://gitlab.example.com/acme/payments\`).
 
 **Check for existing integration (do this before creating):**
-1. Call DevantListIntegrationsTool with \`{ orgId, orgHandle, projectId: selectedProject.id, projectHandler: selectedProject.handler, directoryPath: workspaceFolderPath }\` where \`workspaceFolderPath\` is the value returned by DevantGetGitInfoTool — do NOT construct or guess this path. Passing \`directoryPath\` scopes the result to integrations already registered for that exact local directory, so no manual source path comparison is needed.
+1. Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} with \`{ orgId, orgHandle, projectId: selectedProject.id, projectHandler: selectedProject.handler, directoryPath: workspaceFolderPath }\` where \`workspaceFolderPath\` is the value returned by ${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO} — do NOT construct or guess this path. Passing \`directoryPath\` scopes the result to integrations already registered for that exact local directory, so no manual source path comparison is needed.
 2. If the result is non-empty, **warn the user** with a message like: "An integration for this directory already exists in the project (\`<existing-component-name>\`). Do you want to create another one?" and **wait for explicit confirmation** before proceeding.
-3. If the result is empty, no duplicate exists — proceed to derive \`componentName\` using the full project-wide list for uniqueness checks: call DevantListIntegrationsTool again without \`directoryPath\` to get all component names.
+3. If the result is empty, no duplicate exists — proceed to derive \`componentName\` using the full project-wide list for uniqueness checks: call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} again without \`directoryPath\` to get all component names.
 
 **How to determine componentName:**
 1. Use the basename of the integration's full filesystem path (e.g. if \`componentDir\` is \`/Users/foo/projects/my-repo/services/payment-processor\`, the name is \`payment-processor\`).
@@ -350,39 +349,39 @@ If multiple types are detected or the type cannot be determined from the source 
 **Repository Authorization:**
 - GitHub repo — no GitHub access granted: returns \`authorizationUrl\` for GitHub OAuth. Present as a clickable link, then retry.
 - GitHub repo — connected but this repo not accessible: returns \`authorizationUrl\` for GitHub App install. Present as a clickable link, then retry.
-- Bitbucket or GitLab repo — credential provided but still not accessible: returns \`authorizationUrl\` pointing to Devant credentials settings. Present as a clickable link so the user can reconfigure the credential, then retry.
+- Bitbucket or GitLab repo — credential provided but still not accessible: returns \`authorizationUrl\` pointing to WSO2 Cloud credentials settings. Present as a clickable link so the user can reconfigure the credential, then retry.
 
 **Response Format:**
-- \`requiresAuth: false\` + \`component\` — integration created successfully; Devant has started building it from the remote repo. Immediately call DevantGetIntegrationConsoleUrlTool with \`component.metadata.handler\` and present the URL as a clickable link so the user can monitor the build and deployment. If the build succeeds, it will be automatically deployed in Devant.
+- \`requiresAuth: false\` + \`component\` — integration created successfully; WSO2 Cloud has started building it from the remote repo. Immediately call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_INTEGRATION_CONSOLE_URL} with \`component.metadata.handler\` and present the URL as a clickable link so the user can monitor the build and deployment. If the build succeeds, it will be automatically deployed in WSO2 Cloud.
 - \`requiresAuth: false\` + \`message\` (no \`component\`) — a pre-flight check failed (e.g. the branch does not exist in the remote). Present the message to the user and do not proceed.
 - \`requiresAuth: true\` + \`message\` + \`authorizationUrl\` — authorization needed; present the message and include the URL as a clickable link for the user
 
 **Examples:**
-User: "Deploy this integration to Devant" (GitHub repo)
-→ DevantGetWorkspaceContextTool → isAssociated: true → extract orgId, orgHandle, projectId, projectHandler
+User: "Deploy this integration to WSO2 Cloud" (GitHub repo)
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} → isAssociated: true → extract orgId, orgHandle, projectId, projectHandler
 → Verify git status and push — all changes must be in the remote before proceeding
-→ DevantGetGitInfoTool → confirm isGitInitialized + remotes non-empty → extract repoUrl (origin fetchUrl) and branch
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO} → confirm isGitInitialized + remotes non-empty → extract repoUrl (origin fetchUrl) and branch
 → Analyze workspace source files to determine integrationType
-→ DevantListIntegrationsTool with { orgId, orgHandle, projectId, projectHandler, directoryPath: workspaceFolderPath } → check for duplicate → warn + confirm if found → DevantListIntegrationsTool without directoryPath → derive unique componentName
-→ DevantCreateIntegrationTool with { orgId, orgHandle, projectHandler, componentName, integrationType, repoUrl, branch }
-→ DevantGetIntegrationConsoleUrlTool with { orgHandle, projectId, componentHandler: component.metadata.handler } → present URL to user
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} with { orgId, orgHandle, projectId, projectHandler, directoryPath: workspaceFolderPath } → check for duplicate → warn + confirm if found → ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} without directoryPath → derive unique componentName
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION} with { orgId, orgHandle, projectHandler, componentName, integrationType, repoUrl, branch }
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_INTEGRATION_CONSOLE_URL} with { orgHandle, projectId, componentHandler: component.metadata.handler } → present URL to user
 
-User: "Deploy this integration to Devant" (GitLab repo)
-→ DevantGetWorkspaceContextTool → isAssociated: true → extract orgId, orgHandle, projectId, projectHandler
+User: "Deploy this integration to WSO2 Cloud" (GitLab repo)
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} → isAssociated: true → extract orgId, orgHandle, projectId, projectHandler
 → Verify git status and push — all changes must be in the remote before proceeding
-→ DevantGetGitInfoTool → confirm isGitInitialized + remotes non-empty → extract branch
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO} → confirm isGitInitialized + remotes non-empty → extract branch
 → Analyze workspace source files to determine integrationType
-→ DevantListIntegrationsTool with { orgId, orgHandle, projectId, projectHandler, directoryPath: workspaceFolderPath } → check for duplicate → warn + confirm if found → DevantListIntegrationsTool without directoryPath → derive unique componentName
-→ DevantGetCredentialsTool with { orgId, orgHandle } → present list to user, user picks credential
-→ DevantGetCredentialDetailsTool with { orgId, orgHandle, credentialId } → get serverUrl → construct repoUrl
-→ DevantCreateIntegrationTool with { orgId, orgHandle, projectHandler, componentName, integrationType, repoUrl, branch, credentialId }
-→ DevantGetIntegrationConsoleUrlTool with { orgHandle, projectId, componentHandler: component.metadata.handler } → present URL to user
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} with { orgId, orgHandle, projectId, projectHandler, directoryPath: workspaceFolderPath } → check for duplicate → warn + confirm if found → ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} without directoryPath → derive unique componentName
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS} with { orgId, orgHandle } → present list to user, user picks credential
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIAL_DETAILS} with { orgId, orgHandle, credentialId } → get serverUrl → construct repoUrl
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION} with { orgId, orgHandle, projectHandler, componentName, integrationType, repoUrl, branch, credentialId }
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_INTEGRATION_CONSOLE_URL} with { orgHandle, projectId, componentHandler: component.metadata.handler } → present URL to user
 `,
-        inputSchema: DevantCreateIntegrationSchema,
-        execute: async (input: DevantCreateIntegrationInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudCreateIntegrationSchema,
+        execute: async (input: CloudCreateIntegrationInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_CREATE_INTEGRATION_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantCreateIntegration(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_INTEGRATION}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudCreateIntegration(eventHandler, toolCallId, input);
         },
     });
 }

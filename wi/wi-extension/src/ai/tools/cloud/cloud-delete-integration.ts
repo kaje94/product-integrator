@@ -19,10 +19,9 @@ import { DevantToolEventHandler } from "@wso2/wso2-platform-core";
 import { ext } from "../../../extensionVariables";
 import { contextStore } from "../../../cloud/stores/context-store";
 import { dataCacheStore } from "../../../cloud/stores/data-cache-store";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_DELETE_INTEGRATION_TOOL = "DevantDeleteIntegrationTool";
-
-export interface DevantDeleteIntegrationInput {
+export interface CloudDeleteIntegrationInput {
     orgId: string;
     orgHandle: string;
     projectId: string;
@@ -31,50 +30,50 @@ export interface DevantDeleteIntegrationInput {
     componentName: string;
 }
 
-export interface DevantDeleteIntegrationResult {
+export interface CloudDeleteIntegrationResult {
     success: boolean;
     message: string;
 }
 
-const DevantDeleteIntegrationSchema = jsonSchema<DevantDeleteIntegrationInput>({
+const CloudDeleteIntegrationSchema = jsonSchema<CloudDeleteIntegrationInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "Numeric ID of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.id) or DevantListOrgsTool.",
+            description: `Numeric ID of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         orgHandle: {
             type: "string",
-            description: "Handle (slug) of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.handle) or DevantListOrgsTool.",
+            description: `Handle (slug) of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.handle) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         projectId: {
             type: "string",
-            description: "Unique ID of the project. Obtain from DevantGetWorkspaceContextTool (selectedProject.id) or DevantListProjectsTool.",
+            description: `Unique ID of the project. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedProject.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS}.`,
         },
         projectHandler: {
             type: "string",
-            description: "Handler (slug) of the project. Obtain from DevantGetWorkspaceContextTool (selectedProject.handler) or DevantListProjectsTool.",
+            description: `Handler (slug) of the project. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedProject.handler) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS}.`,
         },
         componentId: {
             type: "string",
-            description: "Unique ID of the integration component to delete. Obtain from DevantListIntegrationsTool (metadata.id).",
+            description: `Unique ID of the integration component to delete. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} (metadata.id).`,
         },
         componentName: {
             type: "string",
-            description: "Display name of the integration component. Obtain from DevantListIntegrationsTool (metadata.displayName). Used to confirm the deletion with the user.",
+            description: `Display name of the integration component. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} (metadata.displayName). Used to confirm the deletion with the user.`,
         },
     },
     required: ["orgId", "orgHandle", "projectId", "projectHandler", "componentId", "componentName"],
 });
 
-export async function devantDeleteIntegration(
+export async function cloudDeleteIntegration(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantDeleteIntegrationInput,
-): Promise<DevantDeleteIntegrationResult> {
+    input: CloudDeleteIntegrationInput,
+): Promise<CloudDeleteIntegrationResult> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_DELETE_INTEGRATION_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.DELETE_INTEGRATION,
         toolInput: input,
         toolCallId,
     });
@@ -87,7 +86,7 @@ export async function devantDeleteIntegration(
         componentName: input.componentName,
     });
 
-    console.log(`[${DEVANT_DELETE_INTEGRATION_TOOL}] Deleted integration "${input.componentName}" (${input.componentId})`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.DELETE_INTEGRATION}] Deleted integration "${input.componentName}" (${input.componentId})`);
 
     // Remove from local cache and refresh workspace context
     const compCache = dataCacheStore.getState().getComponents(input.orgHandle, input.projectHandler);
@@ -98,14 +97,14 @@ export async function devantDeleteIntegration(
     );
     contextStore.getState().refreshState();
 
-    const result: DevantDeleteIntegrationResult = {
+    const result: CloudDeleteIntegrationResult = {
         success: true,
-        message: `Integration "${input.componentName}" has been successfully deleted from Devant. This action only removed the integration from the Devant platform — local files are not affected.`,
+        message: `Integration "${input.componentName}" has been successfully deleted from WSO2 Cloud. This action only removed the integration from the WSO2 Cloud platform — local files are not affected.`,
     };
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_DELETE_INTEGRATION_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.DELETE_INTEGRATION,
         toolOutput: result,
         toolCallId,
     });
@@ -113,18 +112,18 @@ export async function devantDeleteIntegration(
     return result;
 }
 
-export function createDevantDeleteIntegrationTool(eventHandler: DevantToolEventHandler) {
+export function createCloudDeleteIntegrationTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Deletes an existing integration component from a Devant project.
+        description: `Deletes an existing integration component from a WSO2 Cloud project.
 
 **Purpose:**
-Permanently removes an integration component from the Devant platform. This action only affects the Devant registration — it does not delete any local source files.
+Permanently removes an integration component from the WSO2 Cloud platform. This action only affects the WSO2 Cloud registration — it does not delete any local source files.
 
 **This action is irreversible. You MUST explicitly confirm with the user before calling this tool.**
 
 **How to use this tool:**
-1. Call DevantGetWorkspaceContextTool to obtain \`orgId\`, \`orgHandle\`, \`projectId\`, and \`projectHandler\`.
-2. Call DevantListIntegrationsTool to list current integrations and identify the target component. Use \`metadata.id\` as \`componentId\` and \`metadata.displayName\` as \`componentName\`.
+1. Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} to obtain \`orgId\`, \`orgHandle\`, \`projectId\`, and \`projectHandler\`.
+2. Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS} to list current integrations and identify the target component. Use \`metadata.id\` as \`componentId\` and \`metadata.displayName\` as \`componentName\`.
 3. **Ask the user to confirm** they want to permanently delete the named integration before calling this tool. Do not proceed without explicit confirmation.
 4. Call this tool with the confirmed inputs.
 
@@ -132,11 +131,11 @@ Permanently removes an integration component from the Devant platform. This acti
 - \`success: true\` + \`message\` — the integration was deleted; present the message to the user
 - If the call throws, surface the error message to the user and do not retry automatically
 `,
-        inputSchema: DevantDeleteIntegrationSchema,
-        execute: async (input: DevantDeleteIntegrationInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudDeleteIntegrationSchema,
+        execute: async (input: CloudDeleteIntegrationInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_DELETE_INTEGRATION_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantDeleteIntegration(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.DELETE_INTEGRATION}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudDeleteIntegration(eventHandler, toolCallId, input);
         },
     });
 }

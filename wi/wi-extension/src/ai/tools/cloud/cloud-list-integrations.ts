@@ -15,14 +15,15 @@
 // under the License.
 
 import { tool, jsonSchema } from "ai";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 import { ComponentKind, DevantToolEventHandler } from "@wso2/wso2-platform-core";
 import { ext } from "../../../extensionVariables";
 import { contextStore } from "../../../cloud/stores/context-store";
 import { isSamePath } from "../../../utils/pathUtils";
 
-export const DEVANT_LIST_INTEGRATIONS_TOOL = "DevantListIntegrationsTool";
 
-export interface DevantListIntegrationsInput {
+
+export interface CloudListIntegrationsInput {
     orgId: string;
     orgHandle: string;
     projectId: string;
@@ -30,41 +31,41 @@ export interface DevantListIntegrationsInput {
     directoryPath?: string;
 }
 
-const DevantListIntegrationsSchema = jsonSchema<DevantListIntegrationsInput>({
+const CloudListIntegrationsSchema = jsonSchema<CloudListIntegrationsInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "Numeric ID of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.id) or DevantListOrgsTool.",
+            description: `Numeric ID of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         orgHandle: {
             type: "string",
-            description: "Handle (slug) of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.handle) or DevantListOrgsTool.",
+            description: `Handle (slug) of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.handle) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         projectId: {
             type: "string",
-            description: "Unique ID of the project. Obtain from DevantGetWorkspaceContextTool (selectedProject.id) or DevantListProjectsTool.",
+            description: `Unique ID of the project. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedProject.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS}.`,
         },
         projectHandler: {
             type: "string",
-            description: "Handler (slug) of the project. Obtain from DevantGetWorkspaceContextTool (selectedProject.handler) or DevantListProjectsTool.",
+            description: `Handler (slug) of the project. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedProject.handler) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS}.`,
         },
         directoryPath: {
             type: "string",
-            description: "Absolute filesystem path of the integration directory to narrow results to. Obtain from DevantGetGitInfoTool (workspaceFolderPath). Do NOT construct or guess this path — only use the value returned by DevantGetGitInfoTool.",
+            description: `Absolute filesystem path of the integration directory to narrow results to. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO} (workspaceFolderPath). Do NOT construct or guess this path — only use the value returned by ${WI_CLOUD_AGENT_TOOL_NAMES.GET_GIT_INFO}.`,
         },
     },
     required: ["orgId", "orgHandle", "projectId", "projectHandler"],
 });
 
-export async function devantListIntegrations(
+export async function cloudListIntegrations(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantListIntegrationsInput,
+    input: CloudListIntegrationsInput,
 ): Promise<ComponentKind[]> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_LIST_INTEGRATIONS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS,
         toolInput: input,
         toolCallId,
     });
@@ -77,7 +78,7 @@ export async function devantListIntegrations(
             .filter((item) => item.componentFsPath && isSamePath(item.componentFsPath, input.directoryPath!))
             .map((item) => item.component)
             .filter((item): item is ComponentKind => !!item);
-        console.log(`[${DEVANT_LIST_INTEGRATIONS_TOOL}] Filtered to ${components.length} integrations matching directory "${input.directoryPath}"`);
+        console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS}] Filtered to ${components.length} integrations matching directory "${input.directoryPath}"`);
     } else {
         components = await ext.clients.rpcClient.getComponentList({
             orgId: input.orgId,
@@ -85,12 +86,12 @@ export async function devantListIntegrations(
             projectId: input.projectId,
             projectHandle: input.projectHandler,
         });
-        console.log(`[${DEVANT_LIST_INTEGRATIONS_TOOL}] Returning ${components.length} integrations for project "${input.projectHandler}"`);
+        console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS}] Returning ${components.length} integrations for project "${input.projectHandler}"`);
     }
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_LIST_INTEGRATIONS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS,
         toolOutput: components,
         toolCallId,
     });
@@ -98,12 +99,12 @@ export async function devantListIntegrations(
     return components;
 }
 
-export function createDevantListIntegrationsTool(eventHandler: DevantToolEventHandler) {
+export function createCloudListIntegrationsTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Retrieves integration components in a Devant project, optionally scoped to a specific directory.
+        description: `Retrieves integration components in a WSO2 Cloud project, optionally scoped to a specific directory.
 
 **Purpose:**
-Returns integration components already registered in a Devant project. When \`directoryPath\` is provided, only integrations whose source path matches that directory are returned, which is more precise and efficient than scanning all project integrations.
+Returns integration components already registered in a WSO2 Cloud project. When \`directoryPath\` is provided, only integrations whose source path matches that directory are returned, which is more precise and efficient than scanning all project integrations.
 
 **When to use this tool:**
 - When the user asks to see their integrations or components
@@ -111,7 +112,7 @@ Returns integration components already registered in a Devant project. When \`di
 - When you need to resolve a component name to its ID or metadata for operations like delete
 
 **Prerequisites:**
-Call DevantGetWorkspaceContextTool first to obtain \`orgId\`, \`orgHandle\`, \`projectId\`, and \`projectHandler\` from \`selectedOrg\` and \`selectedProject\`.
+Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} first to obtain \`orgId\`, \`orgHandle\`, \`projectId\`, and \`projectHandler\` from \`selectedOrg\` and \`selectedProject\`.
 
 **Using directoryPath:**
 Pass the absolute filesystem path of the integration directory. When provided, the result is filtered from the local context store using path equality — this avoids fetching all project integrations and immediately narrows to only those associated with that directory. Use this when the intent is to check or act on a specific local directory.
@@ -125,11 +126,11 @@ Returns a list of component objects, each containing:
 - \`spec.type\`: Component type (service, scheduleTask, eventHandler, library)
 - \`spec.source\`: Repository source info (repo URL, branch, path)
 `,
-        inputSchema: DevantListIntegrationsSchema,
-        execute: async (input: DevantListIntegrationsInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudListIntegrationsSchema,
+        execute: async (input: CloudListIntegrationsInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_LIST_INTEGRATIONS_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantListIntegrations(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.LIST_INTEGRATIONS}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudListIntegrations(eventHandler, toolCallId, input);
         },
     });
 }

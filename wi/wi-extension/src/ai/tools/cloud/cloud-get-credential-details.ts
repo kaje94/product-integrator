@@ -17,53 +17,52 @@
 import { tool, jsonSchema } from "ai";
 import { CredentialItem, DevantToolEventHandler } from "@wso2/wso2-platform-core";
 import { ext } from "../../../extensionVariables";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_GET_CREDENTIAL_DETAILS_TOOL = "DevantGetCredentialDetailsTool";
-
-export interface DevantGetCredentialDetailsInput {
+export interface CloudGetCredentialDetailsInput {
     orgId: string;
     orgHandle: string;
     credentialId: string;
 }
 
-const DevantGetCredentialDetailsSchema = jsonSchema<DevantGetCredentialDetailsInput>({
+const CloudGetCredentialDetailsSchema = jsonSchema<CloudGetCredentialDetailsInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "Numeric ID of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.id) or DevantListOrgsTool.",
+            description: `Numeric ID of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         orgHandle: {
             type: "string",
-            description: "Handle (slug) of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.handle) or DevantListOrgsTool.",
+            description: `Handle (slug) of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.handle) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         credentialId: {
             type: "string",
-            description: "The unique ID of the credential to retrieve. Obtain from DevantGetCredentialsTool.",
+            description: `The unique ID of the credential to retrieve. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS}.`,
         },
     },
     required: ["orgId", "orgHandle", "credentialId"],
 });
 
-export async function devantGetCredentialDetails(
+export async function cloudGetCredentialDetails(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantGetCredentialDetailsInput,
+    input: CloudGetCredentialDetailsInput,
 ): Promise<CredentialItem> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_GET_CREDENTIAL_DETAILS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIAL_DETAILS,
         toolInput: input,
         toolCallId,
     });
 
     const userInfo = ext.authProvider?.getState().state?.userInfo;
     if (!userInfo) {
-        throw new Error("User not authenticated. Please sign in to Devant first.");
+        throw new Error("User not authenticated. Please sign in to WSO2 Cloud first.");
     }
     const org = userInfo.organizations?.find((o) => o.handle === input.orgHandle);
     if (!org) {
-        throw new Error(`Organization "${input.orgHandle}" not found. Call DevantListOrgsTool to verify the org handle.`);
+        throw new Error(`Organization "${input.orgHandle}" not found. Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} to verify the org handle.`);
     }
 
     const credential = await ext.clients.rpcClient.getCredentialDetails({
@@ -72,11 +71,11 @@ export async function devantGetCredentialDetails(
         credentialId: input.credentialId,
     });
 
-    console.log(`[${DEVANT_GET_CREDENTIAL_DETAILS_TOOL}] Retrieved credential "${credential?.name}" (${input.credentialId})`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIAL_DETAILS}] Retrieved credential "${credential?.name}" (${input.credentialId})`);
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_GET_CREDENTIAL_DETAILS_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIAL_DETAILS,
         toolOutput: credential,
         toolCallId,
     });
@@ -84,20 +83,20 @@ export async function devantGetCredentialDetails(
     return credential;
 }
 
-export function createDevantGetCredentialDetailsTool(eventHandler: DevantToolEventHandler) {
+export function createCloudGetCredentialDetailsTool(eventHandler: DevantToolEventHandler) {
     return tool({
         description: `Retrieves the full details of a specific git credential by ID.
 
 **Purpose:**
-Returns the complete details of a single credential configured in the organization's Devant settings.
+Returns the complete details of a single credential configured in the organization's WSO2 Cloud settings.
 
 **When to use this tool:**
 - When you need the full details of a specific credential (e.g. its serverUrl or type) before using it
-- After calling DevantGetCredentialsTool and identifying a credential by name, use this to fetch its complete data
+- After calling ${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS} and identifying a credential by name, use this to fetch its complete data
 
 **Prerequisites:**
-1. Call DevantGetWorkspaceContextTool first to obtain \`orgId\` (selectedOrg.id) and \`orgHandle\` (selectedOrg.handle).
-2. Obtain the \`credentialId\` from DevantGetCredentialsTool.
+1. Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} first to obtain \`orgId\` (selectedOrg.id) and \`orgHandle\` (selectedOrg.handle).
+2. Obtain the \`credentialId\` from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIALS}.
 
 **Response Format:**
 Returns a credential object containing:
@@ -108,11 +107,11 @@ Returns a credential object containing:
 - \`referenceToken\`: Opaque reference token used when linking this credential to a component
 - \`createdAt\`: When the credential was created
 `,
-        inputSchema: DevantGetCredentialDetailsSchema,
-        execute: async (input: DevantGetCredentialDetailsInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudGetCredentialDetailsSchema,
+        execute: async (input: CloudGetCredentialDetailsInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_GET_CREDENTIAL_DETAILS_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantGetCredentialDetails(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.GET_CREDENTIAL_DETAILS}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudGetCredentialDetails(eventHandler, toolCallId, input);
         },
     });
 }

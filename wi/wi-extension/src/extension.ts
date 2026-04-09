@@ -23,8 +23,8 @@ import { ext } from "./extensionVariables";
 import { StateMachine } from "./stateMachine";
 import { WICloudExtensionAPI } from "./cloud/cloud-ext-api";
 import { IWso2PlatformExtensionAPI, DevantToolEventHandler } from "@wso2/wso2-platform-core";
-import { createDevantToolRegistry, DevantToolRegistry } from "./ai/devant-tool-registry";
-import { getDevantKnowledge } from "./ai/devant-prompts";
+import { createCloudToolRegistry, CloudToolRegistry } from "./ai/cloud-tool-registry";
+import { getCloudKnowledge } from "./ai/cloud-prompts";
 import { BridgeLayer } from "./BridgeLayer";
 import { ViewType } from "@wso2/wi-core";
 import { getPlatform } from "./ws-managers/main/utils";
@@ -32,8 +32,8 @@ import { getPlatform } from "./ws-managers/main/utils";
 interface ExtensionExports {
 	cloudAPIs: IWso2PlatformExtensionAPI;
 	ai: {
-		createDevantToolRegistry: (handler: DevantToolEventHandler) => DevantToolRegistry;
-		getDevantKnowledge: () => string;
+		createCloudToolRegistry: (handler: DevantToolEventHandler) => CloudToolRegistry;
+		getCloudKnowledge: () => string;
 	};
 }
 
@@ -84,7 +84,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 		await activateCloudFunctionality(context);
 		const exports: ExtensionExports = {
 			cloudAPIs: new WICloudExtensionAPI(),
-			ai: { createDevantToolRegistry, getDevantKnowledge },
+			ai: { createCloudToolRegistry, getCloudKnowledge },
 		};
 		ext.log("WSO2 Integrator Extension activated successfully");
 		return exports;

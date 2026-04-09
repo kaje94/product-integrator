@@ -17,46 +17,45 @@
 import { tool, jsonSchema } from "ai";
 import { DevantToolEventHandler, Organization, Project } from "@wso2/wso2-platform-core";
 import { contextStore } from "../../../cloud/stores/context-store";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_GET_WORKSPACE_CONTEXT_TOOL = "DevantGetWorkspaceContextTool";
-
-export interface DevantWorkspaceContext {
+export interface CloudWorkspaceContext {
     selectedProject: Project | null;
     selectedOrg: Organization | null;
     isAssociated: boolean;
 }
 
-const DevantGetWorkspaceContextSchema = jsonSchema<Record<string, never>>({
+const CloudGetWorkspaceContextSchema = jsonSchema<Record<string, never>>({
     type: "object",
     properties: {},
     required: [],
 });
 
-export function devantGetWorkspaceContext(
+export function cloudGetWorkspaceContext(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-): DevantWorkspaceContext {
+): CloudWorkspaceContext {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_GET_WORKSPACE_CONTEXT_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT,
         toolInput: {},
         toolCallId,
     });
 
     const selected = contextStore.getState().state?.selected;
-    const result: DevantWorkspaceContext = {
+    const result: CloudWorkspaceContext = {
         selectedProject: selected?.project ?? null,
         selectedOrg: selected?.org ?? null,
         isAssociated: !!(selected?.project && selected?.org),
     };
 
     console.log(
-        `[${DEVANT_GET_WORKSPACE_CONTEXT_TOOL}] isAssociated=${result.isAssociated}, org=${result.selectedOrg?.name ?? "none"}, project=${result.selectedProject?.name ?? "none"}`
+        `[${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT}] isAssociated=${result.isAssociated}, org=${result.selectedOrg?.name ?? "none"}, project=${result.selectedProject?.name ?? "none"}`
     );
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_GET_WORKSPACE_CONTEXT_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT,
         toolOutput: result,
         toolCallId,
     });
@@ -64,15 +63,15 @@ export function devantGetWorkspaceContext(
     return result;
 }
 
-export function createDevantGetWorkspaceContextTool(eventHandler: DevantToolEventHandler) {
+export function createCloudGetWorkspaceContextTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Returns the Devant project and organization currently associated with the workspace.
+        description: `Returns the WSO2 Cloud project and organization currently associated with the workspace.
 
 **Purpose:**
-Reads the workspace context (from the .choreo/context.yaml association file) and returns the currently linked Devant project and organization.
+Reads the workspace context (from the .choreo/context.yaml association file) and returns the currently linked WSO2 Cloud project and organization.
 
 **When to use this tool:**
-Call this tool as the FIRST STEP before any other Devant tool. It tells you immediately whether the workspace is already associated with a project and org, so you can avoid unnecessary follow-up calls.
+Call this tool as the FIRST STEP before any other WSO2 Cloud tool. It tells you immediately whether the workspace is already associated with a project and org, so you can avoid unnecessary follow-up calls.
 
 **Response Format:**
 Returns an object with:
@@ -81,21 +80,21 @@ Returns an object with:
 - selectedProject (Project | null): the associated project, or null if none
 
 **How to use the result:**
-- isAssociated is true → selectedOrg and selectedProject are available; use them directly for operations that require org/project context — do not call DevantListOrgsTool or DevantListProjectsTool
-- isAssociated is false, selectedOrg is non-null → org is known but no project is linked; call DevantListProjectsTool with selectedOrg.id to let the user pick a project
-- isAssociated is false, selectedOrg is null → no context at all; call DevantListOrgsTool to get the org list, then proceed from there
+- isAssociated is true → selectedOrg and selectedProject are available; use them directly for operations that require org/project context — do not call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS}
+- isAssociated is false, selectedOrg is non-null → org is known but no project is linked; call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS} with selectedOrg.id to let the user pick a project
+- isAssociated is false, selectedOrg is null → no context at all; call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} to get the org list, then proceed from there
 
 **Typical flow:**
-User asks anything Devant-related
-→ Call DevantGetWorkspaceContextTool
+User asks anything WSO2 Cloud-related
+→ Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT}
 → Branch on isAssociated / selectedOrg / selectedProject
 → Proceed with the appropriate tool
 `,
-        inputSchema: DevantGetWorkspaceContextSchema,
+        inputSchema: CloudGetWorkspaceContextSchema,
         execute: async (_input: Record<string, never>, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_GET_WORKSPACE_CONTEXT_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return devantGetWorkspaceContext(eventHandler, toolCallId);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT}] Called [toolCallId: ${toolCallId}]`);
+            return cloudGetWorkspaceContext(eventHandler, toolCallId);
         },
     });
 }

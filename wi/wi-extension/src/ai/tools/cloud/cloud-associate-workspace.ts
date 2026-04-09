@@ -22,43 +22,42 @@ import { contextStore } from "../../../cloud/stores/context-store";
 import { dataCacheStore } from "../../../cloud/stores/data-cache-store";
 import { updateContextFile as updateContextFileUtil } from "../../../cloud/cmds/create-directory-context-cmd";
 import { getGitRoot } from "../../../cloud/git/util";
-import { DevantWorkspaceContext } from "./devant-get-workspace-context";
+import { CloudWorkspaceContext } from "./cloud-get-workspace-context";
+import { WI_CLOUD_AGENT_TOOL_NAMES } from "./cloud-tool-names";
 
-export const DEVANT_ASSOCIATE_WORKSPACE_TOOL = "DevantAssociateWorkspaceTool";
-
-export interface DevantAssociateWorkspaceInput {
+export interface CloudAssociateWorkspaceInput {
     orgId: string;
     orgHandler: string;
     projectHandler: string;
 }
 
-const DevantAssociateWorkspaceSchema = jsonSchema<DevantAssociateWorkspaceInput>({
+const CloudAssociateWorkspaceSchema = jsonSchema<CloudAssociateWorkspaceInput>({
     type: "object",
     properties: {
         orgId: {
             type: "string",
-            description: "The numeric ID of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.id) or DevantListOrgsTool.",
+            description: `The numeric ID of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.id) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         orgHandler: {
             type: "string",
-            description: "The handle (slug) of the organization. Obtain from DevantGetWorkspaceContextTool (selectedOrg.handle) or DevantListOrgsTool.",
+            description: `The handle (slug) of the organization. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} (selectedOrg.handle) or ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS}.`,
         },
         projectHandler: {
             type: "string",
-            description: "The handler (slug) of the project to associate with. Obtain from DevantListProjectsTool (project.handler).",
+            description: `The handler (slug) of the project to associate with. Obtain from ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS} (project.handler).`,
         },
     },
     required: ["orgId", "orgHandler", "projectHandler"],
 });
 
-export async function devantAssociateWorkspace(
+export async function cloudAssociateWorkspace(
     eventHandler: DevantToolEventHandler,
     toolCallId: string,
-    input: DevantAssociateWorkspaceInput,
-): Promise<DevantWorkspaceContext> {
+    input: CloudAssociateWorkspaceInput,
+): Promise<CloudWorkspaceContext> {
     eventHandler({
         type: "tool_call",
-        toolName: DEVANT_ASSOCIATE_WORKSPACE_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.ASSOCIATE_WORKSPACE,
         toolInput: input,
         toolCallId,
     });
@@ -89,17 +88,17 @@ export async function devantAssociateWorkspace(
     await contextStore.getState().refreshState();
 
     const selected = contextStore.getState().state?.selected;
-    const result: DevantWorkspaceContext = {
+    const result: CloudWorkspaceContext = {
         selectedProject: selected?.project ?? null,
         selectedOrg: selected?.org ?? null,
         isAssociated: !!(selected?.project && selected?.org),
     };
 
-    console.log(`[${DEVANT_ASSOCIATE_WORKSPACE_TOOL}] Workspace associated with project "${project.name}" in org "${input.orgHandler}"`);
+    console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.ASSOCIATE_WORKSPACE}] Workspace associated with project "${project.name}" in org "${input.orgHandler}"`);
 
     eventHandler({
         type: "tool_result",
-        toolName: DEVANT_ASSOCIATE_WORKSPACE_TOOL,
+        toolName: WI_CLOUD_AGENT_TOOL_NAMES.ASSOCIATE_WORKSPACE,
         toolOutput: result,
         toolCallId,
     });
@@ -107,26 +106,26 @@ export async function devantAssociateWorkspace(
     return result;
 }
 
-export function createDevantAssociateWorkspaceTool(eventHandler: DevantToolEventHandler) {
+export function createCloudAssociateWorkspaceTool(eventHandler: DevantToolEventHandler) {
     return tool({
-        description: `Associates the current workspace with a Devant project, or switches the association to a different project.
+        description: `Associates the current workspace with a WSO2 Cloud project, or switches the association to a different project.
 
 **Purpose:**
-Writes a project association to the workspace's .choreo/context.yaml file and refreshes the extension state, so subsequent Devant operations are automatically scoped to that project and org.
+Writes a project association to the workspace's .choreo/context.yaml file and refreshes the extension state, so subsequent WSO2 Cloud operations are automatically scoped to that project and org.
 Use this both for initial association (workspace has no linked project) and for switching to a different project.
 
 **When to use this tool:**
-- When the user asks to associate or link the workspace with a Devant project
-- When the user asks to switch the workspace to a different Devant project
-- After creating a new project (DevantCreateProjectTool already handles this automatically)
+- When the user asks to associate or link the workspace with a WSO2 Cloud project
+- When the user asks to switch the workspace to a different WSO2 Cloud project
+- After creating a new project (${WI_CLOUD_AGENT_TOOL_NAMES.CREATE_PROJECT} already handles this automatically)
 
 **How to obtain the required inputs — follow these steps in order:**
-1. Call DevantGetWorkspaceContextTool first.
+1. Call ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} first.
 2. For orgId and orgHandler:
    - If selectedOrg is non-null, use selectedOrg.id and selectedOrg.handle — no need to ask the user
-   - If selectedOrg is null, call DevantListOrgsTool and ask the user to choose an org
+   - If selectedOrg is null, call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_ORGS} and ask the user to choose an org
 3. For projectHandler:
-   - Call DevantListProjectsTool with the resolved orgId to get available projects
+   - Call ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS} with the resolved orgId to get available projects
    - If switching, show the current project and ask the user to confirm the target
    - Use the chosen project's handler field
 
@@ -138,20 +137,20 @@ Returns the updated workspace context:
 
 **Examples:**
 User: "Link this workspace to my Payment Service project"
-→ DevantGetWorkspaceContextTool → selectedOrg available
-→ DevantListProjectsTool with selectedOrg.id
-→ DevantAssociateWorkspaceTool with { orgId, orgHandler, projectHandler: "payment-service" }
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} → selectedOrg available
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS} with selectedOrg.id
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.ASSOCIATE_WORKSPACE} with { orgId, orgHandler, projectHandler: "payment-service" }
 
 User: "Switch to a different project"
-→ DevantGetWorkspaceContextTool → shows current association
-→ DevantListProjectsTool to show available projects
-→ User picks → DevantAssociateWorkspaceTool with chosen project's handler
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.GET_WORKSPACE_CONTEXT} → shows current association
+→ ${WI_CLOUD_AGENT_TOOL_NAMES.LIST_PROJECTS} to show available projects
+→ User picks → ${WI_CLOUD_AGENT_TOOL_NAMES.ASSOCIATE_WORKSPACE} with chosen project's handler
 `,
-        inputSchema: DevantAssociateWorkspaceSchema,
-        execute: async (input: DevantAssociateWorkspaceInput, context?: { toolCallId?: string }) => {
+        inputSchema: CloudAssociateWorkspaceSchema,
+        execute: async (input: CloudAssociateWorkspaceInput, context?: { toolCallId?: string }) => {
             const toolCallId = context?.toolCallId || `fallback-${Date.now()}`;
-            console.log(`[${DEVANT_ASSOCIATE_WORKSPACE_TOOL}] Called [toolCallId: ${toolCallId}]`);
-            return await devantAssociateWorkspace(eventHandler, toolCallId, input);
+            console.log(`[${WI_CLOUD_AGENT_TOOL_NAMES.ASSOCIATE_WORKSPACE}] Called [toolCallId: ${toolCallId}]`);
+            return await cloudAssociateWorkspace(eventHandler, toolCallId, input);
         },
     });
 }
